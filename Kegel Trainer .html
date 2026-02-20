@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kegel Loop - 核心训练</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        .glass-panel {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+        }
+        .breathe-sphere {
+            transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 0.4; }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 3s infinite ease-in-out;
+        }
+        /* Checkbox animation */
+        @keyframes check-pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-check-pop {
+            animation: check-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col">
+    <div id="root" class="h-full w-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // --- 极简图标 ---
+        const IconPlay = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>;
+        const IconPause = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>;
+        const IconCheck = ({ size = 24, className="" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"></polyline></svg>;
+        const IconVolume2 = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>;
+        const IconVolumeX = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>;
+        const IconArrowRight = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>;
+        const IconPlus = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
+
+        // --- 数据存储工具 ---
+        const Storage = {
+            getKey: () => 'kegel_history',
+            getHistory: () => {
+                try {
+                    return JSON.parse(localStorage.getItem(Storage.getKey()) || '[]');
+                } catch (e) { return []; }
+            },
+            addRecord: (isManual = false) => {
+                try {
+                    const history = Storage.getHistory();
+                    history.push({
+                        date: new Date().toISOString(),
+                        completed: true,
+                        manual: isManual
+                    });
+                    localStorage.setItem(Storage.getKey(), JSON.stringify(history));
+                    return history;
+                } catch (e) { console.error(e); return []; }
+            },
+            // 新增：移除今天最后一条记录
+            removeLatestTodayRecord: () => {
+                try {
+                    let history = Storage.getHistory();
+                    const todayStr = new Date().toDateString();
+                    // 从后往前找，找到第一个属于今天的记录的索引
+                    let indexToRemove = -1;
+                    for (let i = history.length - 1; i >= 0; i--) {
+                        if (new Date(history[i].date).toDateString() === todayStr) {
+                            indexToRemove = i;
+                            break;
+                        }
+                    }
+                    if (indexToRemove !== -1) {
+                        history.splice(indexToRemove, 1);
+                        localStorage.setItem(Storage.getKey(), JSON.stringify(history));
+                    }
+                    return history;
+                } catch (e) { console.error(e); return []; }
+            },
+            getTodayCount: () => {
+                try {
+                    const history = Storage.getHistory();
+                    const todayStr = new Date().toDateString();
+                    return history.filter(item => new Date(item.date).toDateString() === todayStr).length;
+                } catch (e) { return 0; }
+            }
+        };
+
+        // --- 核心训练数据 (The Universal Routine) ---
+        const UNIVERSAL_ROUTINE = [
+            // 1. 预备
+            { type: 'prep', duration: 5, text: "调整坐姿，自然呼吸" },
+            
+            // 2. 慢速控制循环 (5组) - 找开关
+            ...Array(5).fill().flatMap(() => [
+                { type: 'contract', duration: 3, text: "慢收缩 (提)" },
+                { type: 'hold', duration: 5, text: "保持住 (稳)" },
+                { type: 'relax', duration: 5, text: "彻底放松 (松)" }
+            ]),
+
+            // 3. 快速反应循环 (10组) - 练神经
+            { type: 'prep', duration: 5, text: "准备：快速反应" },
+            ...Array(10).fill().flatMap(() => [
+                { type: 'contract', duration: 1, text: "快收！" },
+                { type: 'relax', duration: 2, text: "秒松" }
+            ]),
+
+            // 4. 冷却归位
+            { type: 'prep', duration: 3, text: "训练结束" },
+            { type: 'relax', duration: 30, text: "深度放松，完全归位" }
+        ];
+
+        // --- 音效引擎 ---
+        const useSound = () => {
+            const ctxRef = useRef(null);
+            const [isMuted, setIsMuted] = useState(false);
+
+            const init = () => {
+                if (!ctxRef.current) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) ctxRef.current = new AudioContext();
+                }
+                if (ctxRef.current?.state === 'suspended') ctxRef.current.resume();
+            };
+
+            const play = (type) => {
+                if (isMuted || !ctxRef.current) return;
+                const ctx = ctxRef.current;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                const now = ctx.currentTime;
+
+                if (type === 'contract') {
+                    osc.frequency.setValueAtTime(300, now);
+                    osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                } else if (type === 'relax') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.exponentialRampToValueAtTime(200, now + 0.4);
+                    gain.gain.setValueAtTime(0.05, now);
+                    gain.gain.linearRampToValueAtTime(0, now + 0.5);
+                    osc.start(now);
+                    osc.stop(now + 0.5);
+                } else if (type === 'finished') {
+                    osc.frequency.setValueAtTime(440, now);
+                    osc.frequency.setValueAtTime(554, now + 0.2);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0, now + 0.6);
+                    osc.start(now);
+                    osc.stop(now + 0.6);
+                }
+            };
+
+            return { play, init, isMuted, setIsMuted };
+        };
+
+        // --- 引导页 (Guide View) ---
+        const Guide = ({ onStart }) => {
+            const [todayCount, setTodayCount] = useState(0);
+
+            useEffect(() => {
+                setTodayCount(Storage.getTodayCount());
+            }, []);
+
+            const handleManualCheck = () => {
+                Storage.addRecord(true); // true = manual
+                setTodayCount(Storage.getTodayCount());
+            };
+
+            const handleManualUncheck = () => {
+                Storage.removeLatestTodayRecord();
+                setTodayCount(Storage.getTodayCount());
+            };
+
+            const toggleCheck = (index) => {
+                if (index === todayCount) {
+                    // 点击的是下一个空的 -> 打勾
+                    handleManualCheck();
+                } else if (index === todayCount - 1) {
+                    // 点击的是最后一个实的 -> 取消
+                    handleManualUncheck();
+                }
+            };
+
+            return (
+                <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-50 animate-fade-in overflow-y-auto">
+                    <div className="max-w-md w-full glass-panel rounded-3xl p-8 shadow-xl my-auto">
+                        
+                        {/* 头部标题与打卡区 */}
+                        <div className="text-center mb-8 border-b border-slate-100 pb-8">
+                            <h1 className="text-3xl font-bold text-slate-800 mb-2">每日打卡</h1>
+                            <p className="text-slate-400 text-sm mb-6">目标：每天 3 次，形成肌肉记忆</p>
+                            
+                            <div className="flex justify-center gap-6">
+                                {[0, 1, 2].map((index) => {
+                                    const isCompleted = index < todayCount;
+                                    const isNext = index === todayCount;
+                                    // 逻辑判断：是否可交互 (只能点“下一个”或者“撤销最后一个”)
+                                    const canInteract = index === todayCount || (index === todayCount - 1);
+
+                                    return (
+                                        <div 
+                                            key={index}
+                                            onClick={() => canInteract && toggleCheck(index)}
+                                            className={`
+                                                w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 relative
+                                                ${isCompleted 
+                                                    ? 'bg-slate-900 text-white shadow-lg hover:bg-slate-800 cursor-pointer' 
+                                                    : 'bg-white border-2 border-slate-200 text-slate-300 hover:border-slate-300 cursor-pointer hover:bg-slate-50'
+                                                }
+                                                ${!canInteract && !isCompleted ? 'cursor-default' : ''}
+                                            `}
+                                        >
+                                            {isCompleted && (
+                                                <IconCheck size={28} className="animate-check-pop" />
+                                            )}
+                                            {!isCompleted && isNext && (
+                                                <div className="opacity-0 hover:opacity-100 transition-opacity">
+                                                    <IconPlus size={20} />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {todayCount >= 3 && (
+                                <p className="text-green-600 font-bold text-xs mt-4 animate-pulse-slow">今日目标已达成，太棒了！</p>
+                            )}
+                        </div>
+
+                        {/* 说明步骤 */}
+                        <div className="space-y-6">
+                            <div className="flex gap-4">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm">1</div>
+                                <div>
+                                    <h3 className="font-bold text-slate-800 text-base">找对位置</h3>
+                                    <p className="text-slate-500 text-xs leading-relaxed mt-1">
+                                        想象憋尿或忍屁。提起来，而不是把屁股夹紧。
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-4">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-orange-600 font-bold text-sm">2</div>
+                                <div>
+                                    <h3 className="font-bold text-slate-800 text-base">切勿代偿</h3>
+                                    <p className="text-slate-500 text-xs leading-relaxed mt-1">
+                                        大腿松、肚子松、屁股松。只有下面在发力。
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-4">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600 font-bold text-sm">3</div>
+                                <div>
+                                    <h3 className="font-bold text-slate-800 text-base">学会放松</h3>
+                                    <p className="text-slate-500 text-xs leading-relaxed mt-1">
+                                        重点是“完全掉下来”，像冰淇淋融化一样归位。
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={onStart}
+                            className="w-full mt-8 bg-slate-900 text-white py-4 rounded-xl font-bold text-lg hover:bg-slate-800 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-200"
+                        >
+                            <span>跟随系统训练</span>
+                            <IconArrowRight size={20} />
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 播放器页 (Player View) ---
+        const Player = ({ onFinish }) => {
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [stepIndex, setStepIndex] = useState(0);
+            const [timeLeft, setTimeLeft] = useState(UNIVERSAL_ROUTINE[0].duration);
+            const [isFinished, setIsFinished] = useState(false);
+            const [todayCount, setTodayCount] = useState(0); // Renamed: totalCount -> todayCount
+            const timerRef = useRef(null);
+            const hasSavedRef = useRef(false); // 新增锁：防止重复保存
+            
+            const { play, init, isMuted, setIsMuted } = useSound();
+            const currentStep = UNIVERSAL_ROUTINE[stepIndex];
+
+            // 进度计算
+            const progress = useMemo(() => {
+                return Math.min(100, (stepIndex / (UNIVERSAL_ROUTINE.length - 1)) * 100);
+            }, [stepIndex]);
+
+            // 新增：监听完成状态，单独处理保存逻辑，确保只执行一次
+            useEffect(() => {
+                if (isFinished && !hasSavedRef.current) {
+                    hasSavedRef.current = true; // 上锁
+                    Storage.addRecord(false); // false = system auto
+                    setTodayCount(Storage.getTodayCount()); // Changed: getTodayCount
+                }
+            }, [isFinished]);
+
+            // 计时器逻辑
+            useEffect(() => {
+                if (isPlaying && !isFinished) {
+                    timerRef.current = setInterval(() => {
+                        setTimeLeft((prev) => {
+                            if (prev <= 1) {
+                                // 步骤结束，切下一步
+                                if (stepIndex < UNIVERSAL_ROUTINE.length - 1) {
+                                    const nextIdx = stepIndex + 1;
+                                    const nextStep = UNIVERSAL_ROUTINE[nextIdx];
+                                    play(nextStep.type);
+                                    setStepIndex(nextIdx);
+                                    return nextStep.duration;
+                                } else {
+                                    // 全部结束
+                                    // 移除了这里的 Storage.addRecord
+                                    setIsFinished(true);
+                                    setIsPlaying(false);
+                                    play('finished');
+                                    return 0;
+                                }
+                            }
+                            return prev - 1;
+                        });
+                    }, 1000);
+                }
+                return () => clearInterval(timerRef.current);
+            }, [isPlaying, stepIndex, isFinished]);
+
+            const togglePlay = () => {
+                init();
+                setIsPlaying(!isPlaying);
+            };
+
+            // 视觉状态配置
+            const getVisualConfig = () => {
+                if (isFinished) return { 
+                    bg: 'bg-green-500', scale: 'scale-110', text: '完成', sub: 'Great Job' 
+                };
+                
+                switch (currentStep.type) {
+                    case 'contract': return { 
+                        bg: 'bg-blue-600', scale: 'scale-75', shadow: 'shadow-[0_0_60px_rgba(37,99,235,0.4)]',
+                        text: currentStep.text, sub: '收紧 • 上提' 
+                    };
+                    case 'hold': return { 
+                        bg: 'bg-indigo-600', scale: 'scale-75', shadow: 'shadow-[0_0_40px_rgba(79,70,229,0.3)]',
+                        text: currentStep.text, sub: '保持 • 不动' 
+                    };
+                    case 'relax': return { 
+                        bg: 'bg-slate-200', scale: 'scale-100', shadow: '',
+                        text: currentStep.text, sub: '彻底放松 • 归位' 
+                    };
+                    default: return { 
+                        bg: 'bg-slate-100', scale: 'scale-100', shadow: '',
+                        text: currentStep.text, sub: '准备' 
+                    };
+                }
+            };
+
+            const config = getVisualConfig();
+
+            if (isFinished) {
+                return (
+                    <div className="h-full flex flex-col items-center justify-center bg-white animate-fade-in p-6">
+                        <div className="text-center space-y-6">
+                            <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <IconCheck size={40} />
+                            </div>
+                            <h2 className="text-3xl font-bold text-slate-900">训练完成</h2>
+                            <p className="text-slate-500">今天的目标又近了一步。</p>
+                            
+                            <div className="py-4 px-6 bg-slate-50 rounded-xl inline-block border border-slate-100">
+                                <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Today's Sessions</span>
+                                <span className="text-2xl font-bold text-slate-800">{todayCount} 次</span>
+                            </div>
+
+                            <div className="block pt-4">
+                                <button onClick={() => window.location.reload()} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold shadow-lg hover:bg-slate-800 transition-all">
+                                    返回并打卡
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden">
+                    {/* 顶部栏 */}
+                    <div className="absolute top-0 w-full p-6 flex justify-between items-center z-20">
+                        <div className="font-bold text-slate-400 text-sm tracking-widest">KEGEL LOOP</div>
+                        <button onClick={() => setIsMuted(!isMuted)} className="p-2 rounded-full bg-white/50 hover:bg-white text-slate-600 transition-colors">
+                            {isMuted ? <IconVolumeX size={20} /> : <IconVolume2 size={20} />}
+                        </button>
+                    </div>
+
+                    {/* 主视觉区域 */}
+                    <div className="flex-1 flex flex-col items-center justify-center relative z-10">
+                        {/* 呼吸球 */}
+                        <div className={`w-72 h-72 md:w-96 md:h-96 rounded-full flex items-center justify-center breathe-sphere ${config.bg} ${config.shadow} ${config.scale}`}>
+                            <div className="text-center text-white mix-blend-plus-lighter">
+                                <span className="text-8xl md:text-9xl font-bold font-mono tracking-tighter block">
+                                    {timeLeft}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* 文字提示 */}
+                        <div className="mt-12 text-center space-y-2">
+                            <p className="text-slate-400 font-bold text-sm uppercase tracking-widest">{config.sub}</p>
+                            <h2 className="text-3xl md:text-4xl font-bold text-slate-800 transition-all duration-300">
+                                {config.text}
+                            </h2>
+                        </div>
+                    </div>
+
+                    {/* 底部控制栏 */}
+                    <div className="p-8 pb-12 w-full max-w-xl mx-auto z-20">
+                        {/* 进度条 */}
+                        <div className="mb-8 flex items-center gap-4">
+                            <span className="text-xs font-bold text-slate-400 w-8">0%</span>
+                            <div className="h-2 flex-1 bg-slate-200 rounded-full overflow-hidden">
+                                <div 
+                                    className="h-full bg-slate-900 transition-all duration-1000 ease-linear"
+                                    style={{ width: `${progress}%` }}
+                                ></div>
+                            </div>
+                            <span className="text-xs font-bold text-slate-400 w-8">100%</span>
+                        </div>
+
+                        {/* 开始/暂停按钮 */}
+                        <button 
+                            onClick={togglePlay}
+                            className={`w-full py-5 rounded-2xl font-bold text-xl shadow-xl transition-all flex items-center justify-center gap-3 ${
+                                isPlaying 
+                                ? 'bg-white text-slate-900 border-2 border-slate-100' 
+                                : 'bg-slate-900 text-white hover:scale-[1.02] active:scale-[0.98]'
+                            }`}
+                        >
+                            {isPlaying ? <><IconPause /> 暂停</> : <><IconPlay /> {stepIndex === 0 && timeLeft === UNIVERSAL_ROUTINE[0].duration ? '开始' : '继续'}</>}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [hasStarted, setHasStarted] = useState(false);
+            return hasStarted ? <Player /> : <Guide onStart={() => setHasStarted(true)} />;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

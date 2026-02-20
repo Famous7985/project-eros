@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edge Control - 机能进化系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; user-select: none; transition: background-color 1s ease; }
+        
+        /* 进度条动画 */
+        .progress-bar-transition { transition: width 1s linear; }
+
+        /* 动画与特效 */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(249, 115, 22, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+        }
+        .pressing { animation: pulse-red 1s infinite; transform: scale(0.95); }
+
+        @keyframes flash-feedback {
+            0% { background-color: rgba(59, 130, 246, 0.3); }
+            100% { background-color: transparent; }
+        }
+        .flash-screen { animation: flash-feedback 0.3s ease-out; }
+
+        /* 标记点样式 */
+        .marker-group {
+            position: absolute;
+            bottom: -35px;
+            transform: translateX(50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 10;
+        }
+        .marker-line { width: 2px; height: 16px; background-color: #3b82f6; margin-bottom: 2px; }
+        .marker-resume .marker-line { background-color: #10b981; } 
+        .marker-time { font-size: 10px; color: #64748b; font-family: monospace; white-space: nowrap; }
+
+        /* 视图切换 */
+        #cooling-overlay { transition: opacity 0.3s ease, visibility 0.3s; }
+        .cooling-active { opacity: 1 !important; visibility: visible !important; }
+        .view-section { display: none; opacity: 0; transition: opacity 0.5s ease; }
+        .view-active { display: flex; opacity: 1; }
+
+        /* 环形倒计时 */
+        .circle-timer circle { transition: stroke-dashoffset 1s linear; transform: rotate(-90deg); transform-origin: 50% 50%; }
+
+        /* 冲刺页面的霓虹氛围 */
+        .sprint-mode { background-color: #fdf4ff; } 
+        .sprint-text { color: #86198f; text-shadow: 0 0 10px rgba(216, 180, 254, 0.5); }
+        
+        /* 标签选中样式 */
+        .tag-selected { background-color: #3b82f6 !important; color: white !important; border-color: #3b82f6 !important; }
+
+        /* 模态框动画 */
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: all 0.2s ease-out; }
+
+	/* === 新增：首页 UI 样式 (来自 File A) === */
+	@keyframes shake {
+    		0%, 100% { transform: translateX(0); }
+    		10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+    		20%, 40%, 60%, 80% { transform: translateX(4px); }
+	}
+	.shake-element { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+
+	.slider-container { transition: background-color 0.3s ease; }
+	.slider-thumb { transition: transform 0.1s ease-out; cursor: grab; }
+	.slider-thumb:active { cursor: grabbing; }
+	.selected-option {
+    	    border-color: #3b82f6 !important;
+            background-color: #eff6ff !important;
+    	    color: #1d4ed8 !important;
+	}
+    
+    /* 滑动条样式优化 */
+    input[type=range] {
+        -webkit-appearance: none; 
+        background: transparent; 
+    }
+    input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 16px;
+        width: 16px;
+        border-radius: 50%;
+        background: #3b82f6;
+        cursor: pointer;
+        margin-top: -6px; 
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 4px;
+        cursor: pointer;
+        background: #e2e8f0;
+        border-radius: 2px;
+    }
+    </style>
+</head>
+<body class="bg-slate-50 h-screen w-screen flex flex-col overflow-hidden relative" id="main-body">
+
+    <div id="global-settings-btn" class="absolute top-6 right-8 z-40 hidden">
+        <button onclick="toggleSettings(true)" class="text-slate-400 hover:text-slate-600 transition p-2 rounded-full hover:bg-slate-100">
+            <i class="fa-solid fa-gear text-xl"></i>
+        </button>
+    </div>
+
+    <div id="global-game-over" class="absolute top-6 right-8 z-50 transition-opacity duration-500 hidden">
+        <button id="game-over-btn" 
+                class="w-20 h-20 rounded-full bg-orange-500 text-white font-bold text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all border-4 border-orange-400 hover:scale-105 active:scale-95"
+                onmousedown="startLongPress()" onmouseup="cancelLongPress()" onmouseleave="cancelLongPress()"
+                ontouchstart="startLongPress()" ontouchend="cancelLongPress()">
+            <i class="fa-solid fa-skull text-xl"></i>
+            <span>长按结束</span>
+            <div id="press-progress" class="absolute inset-0 rounded-full border-4 border-white opacity-0 transition-all duration-[1500ms]" style="clip-path: circle(0% at 50% 50%)"></div>
+        </button>
+    </div>
+
+    <section id="view-home" class="view-section view-active flex-1 flex-col justify-center items-center w-full max-w-4xl mx-auto relative z-10 p-8">
+        <div class="text-center mb-8">
+        	<div class="flex justify-center items-center gap-2 mb-2">
+            		<i class="fa-solid fa-wave-square text-blue-600 text-3xl"></i>
+            		<h1 class="text-3xl font-bold tracking-tight text-slate-800">Edge Control <span class="text-xs font-normal text-slate-400 ml-1">v1.0</span></h1>
+        </div>
+        <p class="text-slate-500 text-sm">CBT 认知行为脱敏训练系统</p>
+    </div>
+
+    <div class="bg-white w-full rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
+        <h2 class="text-sm font-bold text-slate-900 mb-4 uppercase tracking-wider flex items-center gap-2">
+            <i class="fa-solid fa-shield-halved text-orange-500"></i> 训练前准备
+        </h2>
+        <ul class="text-sm text-slate-500 space-y-3">
+            <li class="flex items-start gap-2"><i class="fa-solid fa-check text-green-500 mt-1 text-xs"></i> <span><strong class="text-slate-700">环境：</strong> 确保未来 15-30 分钟绝对私密。</span></li>
+            <li class="flex items-start gap-2"><i class="fa-solid fa-check text-green-500 mt-1 text-xs"></i> <span><strong class="text-slate-700">介质：</strong> 建议使用润滑液，模拟真实体感。</span></li>
+            <li class="flex items-start gap-2"><i class="fa-solid fa-check text-green-500 mt-1 text-xs"></i> <span><strong class="text-slate-700">心态：</strong> 专注于呼吸与临界点感知。</span></li>
+        </ul>
+    </div>
+
+    <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-8 mb-4" id="config-area">
+        <div class="flex flex-col gap-3">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">选择难度等级</label>
+            <div class="grid grid-cols-4 gap-2 h-14">
+                <button onclick="selectDifficulty(1, this)" class="difficulty-btn border border-slate-200 rounded-lg text-sm font-semibold text-slate-500 hover:border-blue-400 transition bg-white" data-desc="恒定慢速 (50 BPM)">L1</button>
+                <button onclick="selectDifficulty(2, this)" class="difficulty-btn border border-slate-200 rounded-lg text-sm font-semibold text-slate-500 hover:border-blue-400 transition bg-white" data-desc="稳定中速 (80 BPM)">L2</button>
+                <button onclick="selectDifficulty(3, this)" class="difficulty-btn border border-slate-200 rounded-lg text-sm font-semibold text-slate-500 hover:border-blue-400 transition bg-white" data-desc="变速波浪 (100 BPM)">L3</button>
+                <button onclick="selectDifficulty(4, this)" class="difficulty-btn border border-slate-200 rounded-lg text-sm font-semibold text-slate-500 hover:border-blue-400 transition bg-white" data-desc="极限挑战 (120 BPM)">L4</button>
+            </div>
+            <p id="difficulty-desc" class="text-xs text-blue-600 h-4 transition-opacity opacity-0">请选择难度</p>
+        </div>
+
+        <div class="flex flex-col gap-3">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">预计训练时长 (分钟)</label>
+            <div class="flex gap-2 h-14">
+                <input type="number" id="duration-input" placeholder="自定义" min="5" max="60" 
+                       class="w-full px-4 border border-slate-200 rounded-lg text-slate-800 font-bold focus:outline-none focus:border-blue-500 transition text-center"
+                       oninput="validateTime()">
+                <div class="flex gap-1 shrink-0">
+                    <button onclick="setPresetTime(15)" class="px-3 border border-slate-200 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-50">15m</button>
+                    <button onclick="setPresetTime(20)" class="px-3 border border-slate-200 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-50">20m</button>
+                    <button onclick="setPresetTime(30)" class="px-3 border border-slate-200 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-50">30m</button>
+                </div>
+            </div>
+            <p id="time-error" class="text-xs text-red-500 h-4 opacity-0 transition-opacity">建议 5-60 分钟</p>
+        </div>
+    </div>
+
+    <div class="w-1/2 min-w-[320px] mx-auto relative h-16 bg-slate-200 rounded-full slider-container overflow-hidden shadow-inner flex items-center" id="slider-track">
+        <div class="absolute w-full text-center text-slate-400 font-bold tracking-widest pointer-events-none transition-opacity duration-300" id="slider-text">
+            向右滑动开始训练
+        </div>
+        <div class="slider-thumb absolute left-1 w-14 h-14 bg-white rounded-full shadow-lg flex items-center justify-center cursor-grab z-10 text-slate-600 font-bold text-sm" id="slider-thumb">
+            GO
+        </div>
+    </div>
+    </section>
+
+    <section id="view-training" class="view-section flex-1 flex-col items-center justify-center w-full max-w-4xl mx-auto relative z-10">
+        <div class="bg-orange-100 text-orange-800 px-12 py-6 rounded-2xl mb-12 border border-orange-200 shadow-sm">
+            <span id="timer-display" class="text-8xl font-mono font-bold tracking-tighter">15:00</span>
+        </div>
+        <div id="center-zone" class="h-32 flex items-center justify-center w-full relative">
+            <button id="start-btn" onclick="startTraining()" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-xl font-bold py-4 px-12 rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                <i class="fa-solid fa-play mr-2"></i> 开始练习
+            </button>
+            <div id="guide-text" class="hidden text-center animate-fade-in">
+                <p class="text-3xl text-slate-700 font-bold mb-2">跟随节拍 · 1拍1往返</p>
+                <p class="text-sm text-slate-400 mt-2">临界点按下 <span class="bg-slate-200 px-2 py-1 rounded text-slate-600 font-mono border border-slate-300 shadow-sm">空格 Space</span></p>
+            </div>
+        </div>
+    </section>
+
+    <section id="view-sprint" class="view-section flex-1 flex-col items-center justify-center w-full max-w-4xl mx-auto relative z-10">
+        <div class="bg-fuchsia-100 text-fuchsia-900 px-16 py-8 rounded-3xl mb-8 border-4 border-fuchsia-300 shadow-lg shadow-fuchsia-100">
+            <span id="sprint-timer-display" class="text-9xl font-mono font-bold tracking-tighter sprint-text">00:00</span>
+        </div>
+        <div class="text-center space-y-6">
+            <h2 class="text-4xl font-bold text-fuchsia-800">🎉 恭喜达成目标！</h2>
+            <p class="text-xl text-fuchsia-600 font-medium">现在，请毫无保留地释放吧！</p>
+            <p class="text-sm text-fuchsia-400">释放完毕并回过神后，按空格键生成报告</p>
+        </div>
+        <div id="report-entry-sprint" class="hidden mt-12 animate-bounce">
+            <button onclick="goToReport()" class="flex items-center gap-3 bg-green-100 hover:bg-green-200 text-green-800 px-8 py-4 rounded-xl transition border border-green-300 shadow-sm">
+                <span>已生成本次训练报告，点击查阅</span>
+                <i class="fa-solid fa-pencil"></i>
+            </button>
+        </div>
+    </section>
+
+    <section id="view-failure" class="view-section flex-1 flex-col items-center justify-center w-full max-w-4xl mx-auto relative z-10">
+        <div class="bg-amber-100 text-amber-800 px-12 py-6 rounded-2xl mb-8 border border-amber-200">
+            <span id="fail-timer-display" class="text-6xl font-mono font-bold">00:00</span>
+            <p class="text-center text-xs mt-2 text-amber-600 uppercase">剩余时长</p>
+        </div>
+        <div class="bg-amber-50 p-8 rounded-xl border border-amber-200 max-w-lg text-center shadow-sm">
+            <p id="fail-message" class="text-xl text-amber-800 font-medium mb-2">--</p>
+            <p class="text-sm text-amber-600">身体的适应需要过程，每一次失败都是为了下一次更久。</p>
+        </div>
+        <div class="mt-8">
+            <button onclick="goToReport()" class="flex items-center gap-3 bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-3 rounded-lg transition border border-slate-300">
+                <span>记录本次感受并查阅报告</span>
+                <i class="fa-solid fa-pencil"></i>
+            </button>
+        </div>
+    </section>
+
+    <section id="view-report" class="view-section flex-1 flex-col items-center justify-center w-full max-w-5xl mx-auto relative z-10 p-4">
+        
+        <div class="bg-white w-full rounded-2xl shadow-lg border border-slate-200 p-6 mb-8">
+            <h2 class="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                <i class="fa-solid fa-chart-line text-blue-500"></i> 本次训练报告
+            </h2>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8 text-center">
+                <div class="p-4 bg-slate-50 rounded-xl flex flex-col items-center justify-center">
+                    <div class="text-xs text-slate-400 uppercase mb-2">难度等级</div>
+                    <div id="report-diff-val" class="text-xs font-bold text-indigo-600 inline-block px-2 py-1 bg-indigo-50 border border-indigo-100 rounded">L2</div>
+                </div>
+                <div class="p-4 bg-slate-50 rounded-xl">
+                    <div class="text-xs text-slate-400 uppercase">实际坚持</div>
+                    <div id="report-actual-time" class="text-2xl font-bold text-green-600 mt-1">--:--</div>
+                </div>
+                <div class="p-4 bg-slate-50 rounded-xl">
+                    <div class="text-xs text-slate-400 uppercase">临界点次数</div>
+                    <div id="report-edge-count" class="text-2xl font-bold text-purple-600 mt-1">0</div>
+                </div>
+                <div class="p-4 bg-slate-50 rounded-xl">
+                    <div class="text-xs text-slate-400 uppercase">有效训练比</div>
+                    <div id="report-ratio" class="text-2xl font-bold text-blue-600 mt-1">--%</div>
+                </div>
+            </div>
+
+            <div class="mb-12">
+                <div class="text-xs text-slate-400 mb-2">过程回顾</div>
+                <div class="relative w-full h-3 bg-slate-100 rounded-full">
+                    <div id="report-markers-container" class="absolute inset-0 w-full h-full"></div>
+                </div>
+                <div class="flex justify-between text-[10px] text-slate-300 mt-8 font-mono">
+                    <span>START</span>
+                    <span id="report-end-label">END</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-full max-w-3xl space-y-4 mb-8">
+            <h3 class="text-slate-600 font-bold text-sm">请写下你的感受（点选）：</h3>
+            <div id="feedback-tags" class="flex flex-wrap gap-3"></div>
+            <textarea class="w-full p-4 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none h-24" placeholder="或者写下具体的想法..."></textarea>
+        </div>
+
+        <p id="history-compare-text" class="text-center text-slate-500 text-sm mb-8 bg-slate-100 py-2 px-4 rounded-full inline-block">
+            数据计算中...
+        </p>
+
+        <!-- 修改1: 底部按钮组只保留"返回首页"，并居中 -->
+        <div class="w-full flex justify-center">
+            <button onclick="saveReportFeedback(); goHome()" class="w-full max-w-sm py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 font-bold transition">
+                返回首页
+            </button>
+        </div>
+    </section>
+
+    <!-- 修改2: 删除了整个 #view-history (历史页) -->
+
+    <section id="view-abstinence" class="view-section flex-1 flex-col items-center justify-center w-full max-w-4xl mx-auto relative z-10 p-8">
+        
+        <div class="mb-8 text-center">
+            <div class="flex justify-center items-center gap-2 mb-2">
+                <i class="fa-solid fa-lock text-slate-400 text-2xl"></i>
+                <h1 class="text-2xl font-bold tracking-tight text-slate-800">Edge Control</h1>
+            </div>
+            <p class="text-slate-500 text-sm">强制冷却期 (24h)</p>
+        </div>
+
+        <div class="text-center mb-12">
+            <h2 class="text-xl font-bold text-slate-700 mb-2">已完成今日训练</h2>
+            <p class="text-slate-500 text-sm mb-6">为了机能恢复，请至少禁欲 24h 后再继续。</p>
+            
+            <div class="inline-block bg-slate-100 px-8 py-4 rounded-xl border border-slate-200">
+                <div class="text-xs text-slate-400 uppercase tracking-wider mb-1">距离下次挑战解锁</div>
+                <div id="abstinence-timer" class="text-4xl font-mono font-bold text-slate-700">--:--:--</div>
+            </div>
+        </div>
+
+        <div class="w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8 flex flex-col md:flex-row gap-8 mb-8">
+            <div class="flex-1">
+                <h3 onclick="showLatestReport()" class="text-sm font-bold text-slate-800 mb-4 border-l-4 border-blue-500 pl-3 cursor-pointer hover:text-blue-600 transition flex items-center gap-2 group" title="点击回顾详情">
+                    今日训练报告
+                    <i class="fa-solid fa-angle-right opacity-0 group-hover:opacity-100 transition-opacity text-xs"></i>
+                </h3>
+                <div class="grid grid-cols-2 gap-y-6 gap-x-4">
+                    <div>
+                        <div class="text-xs text-slate-400 mb-1">难度等级</div>
+                        <div id="abs-diff-val" class="font-bold text-indigo-600 text-xs inline-block px-2 py-1 bg-indigo-50 border border-indigo-100 rounded">L2</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-slate-400 mb-1">实际时长</div>
+                        <div id="abs-duration" class="font-bold text-green-600 text-xl mt-1">--:--</div>
+                    </div>
+                    
+                    <div class="flex flex-col items-center w-fit">
+                        <div class="text-xs text-slate-400 mb-1">临界点</div>
+                        <div id="abs-edge" class="font-bold text-purple-600 text-xl mt-1">0</div>
+                    </div>
+                    
+                    <div>
+                        <div class="text-xs text-slate-400 mb-1">有效训练比</div>
+                        <div id="abs-ratio" class="font-bold text-blue-600 text-xl mt-1">--%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="w-px bg-slate-100 hidden md:block"></div>
+            <div class="flex-1">
+                <h3 class="text-sm font-bold text-slate-800 mb-4 border-l-4 border-amber-500 pl-3">温馨提示</h3>
+                <p id="abs-tips" class="text-sm text-slate-500 leading-relaxed">
+                    系统正在分析你的表现...
+                </p>
+            </div>
+        </div>
+
+        <!-- 修改3: 删除了底部的“你还想了解什么”及 4 个按钮 -->
+    </section>
+
+    <div id="modal-overlay" class="fixed inset-0 bg-black/50 z-[100] hidden items-center justify-center backdrop-blur-sm transition-opacity">
+        <div id="modal-content" class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl transform transition-all scale-95 opacity-0">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="modal-title" class="text-xl font-bold text-slate-800">标题</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div id="modal-body" class="text-slate-600 text-sm leading-relaxed max-h-[60vh] overflow-y-auto">
+                内容区域
+            </div>
+        </div>
+    </div>
+
+    <div id="cooling-overlay" class="absolute inset-0 bg-blue-50/95 backdrop-blur-sm z-20 flex flex-col items-center justify-center opacity-0 invisible">
+        <div class="flex flex-col items-center gap-12 w-full max-w-4xl mt-[-50px]">
+            <div class="flex items-center gap-12">
+                <div class="text-blue-300 flex flex-col items-center">
+                    <span class="text-xs uppercase tracking-widest mb-1">Total Time</span>
+                    <span id="cooling-main-timer" class="text-5xl font-mono font-bold">15:00</span>
+                </div>
+                <div class="relative w-32 h-32">
+                    <svg class="w-full h-full circle-timer" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="45" fill="none" stroke="#dbeafe" stroke-width="6"/>
+                        <circle id="cooling-ring" cx="50" cy="50" r="45" fill="none" stroke="#3b82f6" stroke-width="6" stroke-linecap="round" stroke-dasharray="283" stroke-dashoffset="0" />
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <span id="cooling-seconds" class="text-4xl font-bold text-blue-600 font-mono">30</span>
+                    </div>
+                </div>
+            </div>
+            <div class="text-center space-y-4">
+                <h2 class="text-3xl font-bold text-slate-700">❄️ 强制冷却 · 腹式呼吸</h2>
+                <p class="text-slate-500">放开双手，深吸慢呼，不可软掉</p>
+            </div>
+            
+            <div class="flex gap-4 w-full max-w-md px-8">
+                <button onclick="extendCooling()" class="flex-1 py-3 bg-blue-100 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-200 transition shadow-sm font-bold flex items-center justify-center gap-2 active:scale-95">
+                    <i class="fa-solid fa-clock-rotate-left"></i> +10s
+                </button>
+                <button onclick="endCooling()" class="flex-[2] py-3 bg-white border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 transition shadow-sm font-bold flex items-center justify-center gap-2 active:scale-95">
+                    <i class="fa-solid fa-forward"></i> 我已冷静
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <footer id="main-footer" class="w-full px-12 pb-12 z-30 fixed bottom-0 transition-opacity duration-300">
+        <div class="relative w-full h-4 bg-slate-200 rounded-full shadow-inner">
+            <div id="progress-fill" class="absolute right-0 top-0 h-full bg-green-500 rounded-full shadow-sm progress-bar-transition" style="width: 100%;"></div>
+            <div id="markers-container" class="absolute inset-0 w-full h-full pointer-events-none"></div>
+        </div>
+        <div class="flex justify-between text-[10px] text-slate-400 font-mono mt-1 px-1">
+            <span>00:00</span>
+            <span id="footer-end-time">--:--</span>
+        </div>
+    </footer>
+
+    <script>
+        // === 配置 ===
+        let CONFIG = { duration: 900, bpm: 60 }; 
+        
+        // === 用户个性化设置 (持久化) ===
+        const savedPrefs = JSON.parse(localStorage.getItem('edge_prefs') || '{}');
+        let USER_PREFS = {
+            soundType: savedPrefs.soundType || 'electronic', 
+            volume: savedPrefs.volume !== undefined ? savedPrefs.volume : 0.5,
+            coolDuration: savedPrefs.coolDuration || 30, 
+            lockoutHours: savedPrefs.lockoutHours || 24  
+        };
+
+        function saveUserPrefs() {
+            localStorage.setItem('edge_prefs', JSON.stringify(USER_PREFS));
+        }
+        
+        let state = {
+            totalSecs: CONFIG.duration,
+            remainSecs: CONFIG.duration,
+            sprintSecs: 0,
+            status: 'idle', 
+            coolSecs: USER_PREFS.coolDuration, 
+            currentCoolTotal: USER_PREFS.coolDuration, 
+            timerId: null,
+            metroId: null,
+            coolId: null,
+            sprintId: null,
+            absTimerId: null, 
+            edgeCount: 0, 
+            totalCoolingTime: 0, 
+            markersData: [] 
+        };
+
+        const els = {
+            views: {
+                home: document.getElementById('view-home'),
+                training: document.getElementById('view-training'),
+                sprint: document.getElementById('view-sprint'),
+                failure: document.getElementById('view-failure'),
+                report: document.getElementById('view-report'),
+                // history: document.getElementById('view-history'), // 删除
+                abstinence: document.getElementById('view-abstinence')
+            },
+            timers: {
+                main: document.getElementById('timer-display'),
+                coolMain: document.getElementById('cooling-main-timer'),
+                sprint: document.getElementById('sprint-timer-display'),
+                fail: document.getElementById('fail-timer-display'),
+                abs: document.getElementById('abstinence-timer')
+            },
+            cool: {
+                overlay: document.getElementById('cooling-overlay'),
+                ring: document.getElementById('cooling-ring'),
+                num: document.getElementById('cooling-seconds')
+            },
+            report: {
+                actualTime: document.getElementById('report-actual-time'),
+                edgeCount: document.getElementById('report-edge-count'),
+                ratio: document.getElementById('report-ratio'),
+                markers: document.getElementById('report-markers-container'),
+                tags: document.getElementById('feedback-tags'),
+                endLabel: document.getElementById('report-end-label'), 
+                startLabel: document.querySelector('#view-report .font-mono span:first-child') 
+            },
+            abs: {
+                duration: document.getElementById('abs-duration'),
+                edge: document.getElementById('abs-edge'),
+                ratio: document.getElementById('abs-ratio'), 
+                tips: document.getElementById('abs-tips')
+            },
+            globalGameOver: document.getElementById('global-game-over'),
+            globalSettings: document.getElementById('global-settings-btn'),
+            mainFooter: document.getElementById('main-footer'),
+            footerEndTime: document.getElementById('footer-end-time'), 
+            body: document.getElementById('main-body'),
+            progress: document.getElementById('progress-fill'),
+            markers: document.getElementById('markers-container'),
+            reportEntrySprint: document.getElementById('report-entry-sprint'),
+            failMessage: document.getElementById('fail-message'),
+            modal: {
+                overlay: document.getElementById('modal-overlay'),
+                content: document.getElementById('modal-content'),
+                title: document.getElementById('modal-title'),
+                body: document.getElementById('modal-body')
+            }
+        };
+
+        let audioCtx;
+
+        let config = { difficulty: null, duration: null };
+        let isDragging = false;
+        let startX;
+        
+        function selectDifficulty(level, btn) {
+            config.difficulty = level;
+            document.querySelectorAll('.difficulty-btn').forEach(b => b.classList.remove('selected-option'));
+            btn.classList.add('selected-option');
+            const descEl = document.getElementById('difficulty-desc');
+            descEl.innerText = btn.getAttribute('data-desc');
+            descEl.classList.remove('opacity-0');
+        }
+
+        function setPresetTime(min) {
+            document.getElementById('duration-input').value = min;
+            validateTime();
+        }
+        function validateTime() {
+            const val = parseInt(document.getElementById('duration-input').value);
+            const errorEl = document.getElementById('time-error');
+            const input = document.getElementById('duration-input');
+            
+            if (val && val >= 5 && val <= 60) {
+                config.duration = val;
+                input.classList.remove('border-red-500', 'text-red-500');
+                errorEl.classList.add('opacity-0');
+            } else {
+                config.duration = null;
+                if(input.value) {
+                    input.classList.add('border-red-500', 'text-red-500');
+                    errorEl.classList.remove('opacity-0');
+                }
+            }
+        }
+
+        const sliderTrack = document.getElementById('slider-track');
+        const sliderThumb = document.getElementById('slider-thumb');
+        const sliderText = document.getElementById('slider-text');
+        const configArea = document.getElementById('config-area');
+
+        if(sliderThumb) {
+            sliderThumb.addEventListener('mousedown', startDrag);
+            document.addEventListener('mouseup', endDrag);
+            document.addEventListener('mousemove', drag);
+            sliderThumb.addEventListener('touchstart', (e) => startDrag(e.touches[0]));
+            document.addEventListener('touchend', endDrag);
+            document.addEventListener('touchmove', (e) => drag(e.touches[0]));
+        }
+
+        function startDrag(e) {
+            if (!config.difficulty || !config.duration) {
+                configArea.classList.remove('shake-element');
+                void configArea.offsetWidth;
+                configArea.classList.add('shake-element');
+                sliderText.innerText = "请先设置难度和时间！";
+                sliderText.classList.add('text-red-500');
+                setTimeout(() => {
+                    sliderText.innerText = "向右滑动开始训练";
+                    sliderText.classList.remove('text-red-500');
+                }, 1500);
+                return;
+            }
+            isDragging = true;
+            startX = e.clientX;
+            sliderText.style.opacity = '0.3';
+        }
+
+        function drag(e) {
+            if (!isDragging) return;
+            const trackWidth = sliderTrack.offsetWidth;
+            const thumbWidth = sliderThumb.offsetWidth;
+            const maxMove = trackWidth - thumbWidth - 8;
+            let moveX = e.clientX - startX;
+            if (moveX < 0) moveX = 0;
+            if (moveX > maxMove) moveX = maxMove;
+
+            sliderThumb.style.transform = `translateX(${moveX}px)`;
+            
+            const percentage = moveX / maxMove;
+            sliderTrack.style.backgroundColor = `rgba(34, 197, 94, ${0.1 + percentage * 0.6})`; 
+            
+            if (moveX >= maxMove - 2) triggerStart();
+        }
+
+        function endDrag() {
+            if (!isDragging) return;
+            isDragging = false;
+            sliderThumb.style.transform = `translateX(0px)`;
+            sliderTrack.style.backgroundColor = ''; 
+            sliderText.style.opacity = '1';
+        }
+
+        function triggerStart() {
+            isDragging = false;
+            sliderThumb.innerHTML = '<i class="fa-solid fa-check"></i>';
+            sliderThumb.style.backgroundColor = '#16a34a'; 
+            sliderThumb.style.color = 'white';
+            sliderTrack.style.backgroundColor = 'rgba(34, 197, 94, 0.6)';
+            sliderText.innerText = "准备进入...";
+            
+            CONFIG.duration = config.duration * 60; 
+            
+            const bpmMap = { 1: 50, 2: 80, 3: 100, 4: 120 };
+            CONFIG.bpm = bpmMap[config.difficulty] || 60;
+
+            const totalM = Math.floor(CONFIG.duration / 60).toString().padStart(2, '0');
+            const totalS = (CONFIG.duration % 60).toString().padStart(2, '0');
+            els.footerEndTime.innerText = `${totalM}:${totalS}`;
+
+            state.totalSecs = CONFIG.duration;
+            state.remainSecs = CONFIG.duration;
+            state.status = 'idle';
+
+            setTimeout(() => {
+                startTrainingFlow(); 
+                updateDisplay(); 
+            }, 500);
+        }
+        
+        window.onload = function() {
+            // 修改：初始化时优先检查是否处于禁欲锁定状态
+            if (isLockedOut()) {
+                goToAbstinence();
+            } else {
+                switchView('home');
+            }
+        };
+
+        function switchView(viewName) {
+            Object.values(els.views).forEach(el => {
+                // el可能为null (因为history被删了)，加个判断
+                if (el) {
+                    el.style.display = 'none'; 
+                    el.classList.remove('view-active');
+                }
+            });
+            const target = els.views[viewName];
+            if (!target) return;
+            
+            target.style.display = 'flex';
+            void target.offsetWidth; 
+            target.classList.add('view-active');
+
+            if (['home', 'report', 'history', 'abstinence'].includes(viewName)) {
+                els.mainFooter.style.opacity = '0';
+                els.mainFooter.style.pointerEvents = 'none';
+            } else {
+                els.mainFooter.style.opacity = '1';
+                els.mainFooter.style.pointerEvents = 'auto';
+            }
+
+            if (['training', 'cooling'].includes(viewName)) {
+                els.globalGameOver.style.display = 'block';
+                setTimeout(() => els.globalGameOver.style.opacity = '1', 100);
+            } else {
+                els.globalGameOver.style.opacity = '0';
+                setTimeout(() => els.globalGameOver.style.display = 'none', 500);
+            }
+
+            if (viewName === 'home' || viewName === 'abstinence') {
+                els.globalSettings.classList.remove('hidden');
+            } else {
+                els.globalSettings.classList.add('hidden');
+            }
+
+            els.body.classList.remove('sprint-mode'); 
+            els.body.style.backgroundColor = '#f8fafc'; 
+        }
+
+        function startTrainingFlow() {
+            if (isLockedOut()) {
+                goToAbstinence();
+            } else {
+                switchView('training');
+            }
+        }
+
+        function startTraining() {
+            document.getElementById('start-btn').classList.add('hidden');
+            document.getElementById('guide-text').classList.remove('hidden');
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            state.status = 'running';
+            runMainTimer();
+            toggleMetronome(true);
+        }
+
+        function runMainTimer() {
+            state.timerId = setInterval(() => {
+                state.remainSecs--;
+                updateDisplay();
+                if (state.remainSecs <= 0) enterSprintMode();
+            }, 1000);
+        }
+
+        function updateDisplay() {
+            if (state.remainSecs < 0) state.remainSecs = 0;
+            const m = Math.floor(state.remainSecs / 60).toString().padStart(2, '0');
+            const s = (state.remainSecs % 60).toString().padStart(2, '0');
+            const timeStr = `${m}:${s}`;
+            els.timers.main.innerText = timeStr;
+            els.timers.coolMain.innerText = timeStr;
+            const pct = (state.remainSecs / state.totalSecs) * 100;
+            els.progress.style.width = `${pct}%`;
+        }
+
+        function enterSprintMode() {
+            clearInterval(state.timerId);
+            clearInterval(state.metroId); 
+            clearInterval(state.coolId);
+            state.status = 'sprint';
+            switchView('sprint');
+            els.body.classList.add('sprint-mode');
+            
+            state.sprintId = setInterval(() => {
+                state.sprintSecs++;
+                const m = Math.floor(state.sprintSecs / 60).toString().padStart(2, '0');
+                const s = (state.sprintSecs % 60).toString().padStart(2, '0');
+                els.timers.sprint.innerText = `${m}:${s}`;
+            }, 1000);
+        }
+
+        function finishSprint() {
+            if (state.status !== 'sprint') return;
+            clearInterval(state.sprintId);
+            state.status = 'success';
+            els.reportEntrySprint.classList.remove('hidden');
+            els.timers.sprint.style.color = '#d97706';
+        }
+
+        function triggerGameOver() {
+            els.cool.overlay.classList.remove('cooling-active'); 
+
+            if (state.status === 'cooling') {
+                const currentCoolDuration = Math.round((Date.now() - coolStartTime) / 1000);
+                state.totalCoolingTime += currentCoolDuration;
+            }
+
+            clearInterval(state.timerId);
+            clearInterval(state.metroId);
+            clearInterval(state.coolId);
+            state.status = 'failed';
+
+            const m = Math.floor(state.remainSecs / 60).toString().padStart(2, '0');
+            const s = (state.remainSecs % 60).toString().padStart(2, '0');
+            els.timers.fail.innerText = `${m}:${s}`;
+
+            const elapsed = state.totalSecs - state.remainSecs;
+            const elapsedM = Math.floor(elapsed / 60);
+            const elapsedS = elapsed % 60;
+            const timeStr = elapsedM > 0 ? `${elapsedM}分${elapsedS}秒` : `${elapsedS}秒`;
+
+            const completionRate = (state.totalSecs - state.remainSecs) / state.totalSecs;
+            if (completionRate > 0.8) {
+                els.failMessage.innerText = `就差一点点了！${timeStr}的成绩已经超越了90%的人！`;
+            } else if (completionRate < 0.2) {
+                els.failMessage.innerText = `万事开头难，坚持了${timeStr}也是一种进步。`;
+            } else {
+                els.failMessage.innerText = `${timeStr}也很不错啦，不要难过...`;
+            }
+
+            switchView('failure');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (state.status === 'running') triggerCooling();
+                else if (state.status === 'sprint') finishSprint();
+            }
+        });
+
+        let coolStartTime;
+        function triggerCooling() {
+            state.status = 'cooling';
+            toggleMetronome(false);
+            els.body.classList.add('flash-screen');
+            setTimeout(() => els.body.classList.remove('flash-screen'), 300);
+            els.cool.overlay.classList.add('cooling-active');
+            
+            state.edgeCount++; 
+            addMarker('edge');
+            
+            coolStartTime = Date.now(); 
+            state.coolSecs = USER_PREFS.coolDuration;
+            state.currentCoolTotal = USER_PREFS.coolDuration;
+            
+            updateCoolRing();
+            state.coolId = setInterval(() => {
+                state.coolSecs--;
+                updateCoolRing();
+                if (state.coolSecs <= 0) endCooling();
+            }, 1000);
+        }
+
+        function extendCooling() {
+            if (state.status !== 'cooling') return;
+            
+            state.coolSecs += 10;
+            state.currentCoolTotal += 10;
+            
+            updateCoolRing();
+            
+            const btn = document.querySelector('button[onclick="extendCooling()"]');
+            if(btn) {
+                btn.classList.add('ring-2', 'ring-blue-400');
+                setTimeout(() => btn.classList.remove('ring-2', 'ring-blue-400'), 200);
+            }
+        }
+
+        function endCooling() {
+            if (state.status !== 'cooling') return;
+            clearInterval(state.coolId);
+            state.status = 'running';
+            
+            const coolDuration = Math.round((Date.now() - coolStartTime) / 1000);
+            state.totalCoolingTime += coolDuration;
+
+            els.cool.overlay.classList.remove('cooling-active');
+            toggleMetronome(true);
+            addMarker('resume');
+        }
+
+        function updateCoolRing() {
+            els.cool.num.innerText = state.coolSecs;
+            const offset = 283 - ((state.coolSecs / state.currentCoolTotal) * 283);
+            els.cool.ring.style.strokeDashoffset = offset;
+        }
+
+        function toggleMetronome(play) {
+            if (state.metroId) clearInterval(state.metroId);
+            if (play) {
+                const interval = (60 / CONFIG.bpm) * 1000;
+                state.metroId = setInterval(() => playSound(false), interval);
+            }
+        }
+
+        function playSound(isTest = false) {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            gain.gain.value = USER_PREFS.volume;
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+
+            if (USER_PREFS.soundType === 'heartbeat') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(60, now);
+                osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+                
+                const boost = 2.5; 
+                gain.gain.setValueAtTime(Math.min(USER_PREFS.volume * boost, 1.0), now); 
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                
+                osc.start(now);
+                osc.stop(now + 0.15);
+
+            } else if (USER_PREFS.soundType === 'wooden') {
+                osc.type = 'triangle'; 
+                osc.frequency.setValueAtTime(400, now); 
+                osc.frequency.exponentialRampToValueAtTime(300, now + 0.05); 
+                
+                gain.gain.setValueAtTime(USER_PREFS.volume, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); 
+                
+                osc.start(now);
+                osc.stop(now + 0.1);
+
+            } else {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(300, now + 0.1);
+                
+                gain.gain.setValueAtTime(USER_PREFS.volume * 0.3, now); 
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                
+                osc.start(now);
+                osc.stop(now + 0.1);
+            }
+        }
+
+        let previewTimer = null;
+        function previewSound() {
+            if (previewTimer) {
+                clearInterval(previewTimer);
+                previewTimer = null;
+            }
+            
+            playSound(true);
+            
+            let count = 0;
+            previewTimer = setInterval(() => {
+                playSound(true);
+                count++;
+                if (count >= 4) {
+                    clearInterval(previewTimer);
+                    previewTimer = null;
+                }
+            }, 1000); 
+        }
+
+        function addMarker(type) {
+            const elapsed = state.totalSecs - state.remainSecs;
+            
+            const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const s = (elapsed % 60).toString().padStart(2, '0');
+            const timeText = `${m}:${s}`;
+            
+            state.markersData.push({ type, elapsed, timeText }); 
+
+            const pct = (state.remainSecs / state.totalSecs) * 100;
+            renderMarker(els.markers, type, pct, timeText);
+        }
+
+        function renderMarker(container, type, pct, timeText) {
+            const marker = document.createElement('div');
+            marker.className = type === 'edge' ? 'marker-group' : 'marker-group marker-resume';
+            marker.style.right = `${pct}%`;
+            marker.innerHTML = `
+                <div class="marker-line"></div>
+                <div class="marker-time">${timeText}</div>
+            `;
+            container.appendChild(marker);
+        }
+
+        let pressTimer;
+        function startLongPress() {
+            if (state.status !== 'running' && state.status !== 'cooling') return;
+            const btn = document.getElementById('game-over-btn');
+            const prog = document.getElementById('press-progress');
+            btn.classList.add('pressing');
+            prog.style.clipPath = 'circle(100% at 50% 50%)';
+            prog.style.opacity = '1';
+            pressTimer = setTimeout(triggerGameOver, 1500);
+        }
+        function cancelLongPress() {
+            const btn = document.getElementById('game-over-btn');
+            const prog = document.getElementById('press-progress');
+            btn.classList.remove('pressing');
+            clearTimeout(pressTimer);
+            prog.style.transition = 'none';
+            prog.style.clipPath = 'circle(0% at 50% 50%)';
+            prog.style.opacity = '0';
+            setTimeout(() => prog.style.transition = 'all 1500ms linear', 50);
+        }
+
+        function goToReport() {
+            switchView('report');
+
+            let actualSeconds = 0;
+            if (state.status === 'success') {
+                actualSeconds = state.totalSecs + state.sprintSecs;
+            } else {
+                actualSeconds = state.totalSecs - state.remainSecs;
+            }
+
+            const m = Math.floor(actualSeconds / 60).toString().padStart(2, '0');
+            const s = (actualSeconds % 60).toString().padStart(2, '0');
+            els.report.actualTime.innerText = `${m}:${s}`;
+            els.report.actualTime.style.color = state.status === 'success' ? "#15803d" : "#f97316";
+            els.report.edgeCount.innerText = state.edgeCount;
+
+            if (actualSeconds > 0) {
+                const ratio = ((actualSeconds - state.totalCoolingTime) / actualSeconds) * 100;
+                els.report.ratio.innerText = ratio.toFixed(1) + "%";
+            } else {
+                els.report.ratio.innerText = "0%";
+            }
+
+            document.getElementById('report-diff-val').innerText = 'L' + (config.difficulty || 2);
+
+            els.report.markers.innerHTML = ''; 
+            
+            let timelineBase = actualSeconds > 0 ? actualSeconds : 1;
+            
+            const isSprint = actualSeconds > state.totalSecs; 
+            const isSuccess = actualSeconds >= state.totalSecs;
+
+            let backgroundHTML = '';
+            if (!isSuccess) {
+                backgroundHTML = `<div class="absolute inset-0 bg-orange-200 rounded-full"></div>`;
+            } else if (!isSprint) {
+                backgroundHTML = `<div class="absolute inset-0 bg-green-500 rounded-full"></div>`;
+            } else {
+                const goalPercent = (state.totalSecs / timelineBase) * 100;
+                backgroundHTML = `
+                    <div class="absolute left-0 top-0 bottom-0 bg-green-500 rounded-l-full" style="width: ${goalPercent}%"></div>
+                    <div class="absolute right-0 top-0 bottom-0 bg-gradient-to-r from-green-500 to-purple-500 rounded-r-full" style="left: ${goalPercent}%"></div>
+                    <div class="absolute top-1/2 -translate-y-1/2 flex flex-col items-center" style="left: ${goalPercent}%">
+                         <div class="w-0.5 h-4 bg-white/50"></div>
+                         <div class="absolute -top-3 text-[8px] font-bold text-green-700 bg-white/90 px-1 rounded shadow-sm border border-green-200 whitespace-nowrap z-20">GOAL</div>
+                    </div>
+                `;
+            }
+
+            let coolingSegmentsHTML = '';
+            if (state.markersData && state.markersData.length > 0) {
+                for (let i = 0; i < state.markersData.length; i++) {
+                    const startData = state.markersData[i];
+                    if (startData.type === 'edge') {
+                        let endElapsed = timelineBase;
+                        if (i + 1 < state.markersData.length) {
+                            const nextData = state.markersData[i+1];
+                            if (nextData.type === 'resume') {
+                                endElapsed = nextData.elapsed;
+                            }
+                        }
+                        
+                        const leftPct = (startData.elapsed / timelineBase) * 100;
+                        const widthPct = ((endElapsed - startData.elapsed) / timelineBase) * 100;
+                        
+                        const isAtEnd = (leftPct + widthPct) >= 99;
+                        const roundedClass = isAtEnd ? 'rounded-r-full' : '';
+                        
+                        coolingSegmentsHTML += `<div class="absolute top-0 bottom-0 bg-cyan-300/80 backdrop-blur-[1px] z-10 ${roundedClass}" style="left: ${leftPct}%; width: ${widthPct}%;"></div>`;
+                    }
+                }
+            }
+
+            els.report.markers.innerHTML = backgroundHTML + coolingSegmentsHTML;
+
+            if (els.report.endLabel) {
+                const endM = Math.floor(timelineBase / 60).toString().padStart(2, '0');
+                const endS = (timelineBase % 60).toString().padStart(2, '0');
+                els.report.endLabel.innerText = `${endM}:${endS}`;
+            }
+            if (els.report.startLabel) {
+                els.report.startLabel.innerText = "00:00";
+            }
+
+            state.markersData.forEach(d => {
+                let percent = (d.elapsed / timelineBase) * 100;
+                if (percent > 100) percent = 100; 
+                const rightPct = 100 - percent;
+                renderMarker(els.report.markers, d.type, rightPct, d.timeText);
+            });
+
+            const successTags = ["状态神勇", "节奏完美", "略感吃力", "控制感强", "身心合一"];
+            const failTags = ["太敏感了", "视觉刺激过强", "冷却不及时", "心绪不宁", "单纯想射"];
+            const targetTags = state.status === 'success' ? successTags : failTags;
+            
+            els.report.tags.innerHTML = targetTags.map(tag => `
+                <button onclick="toggleTag(this)" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-full text-xs font-bold border border-transparent hover:bg-white hover:border-blue-300 transition select-none">
+                    ${tag}
+                </button>
+            `).join('');
+
+            const history = JSON.parse(localStorage.getItem('edge_history') || '[]');
+            const compareTextEl = document.getElementById('history-compare-text');
+
+            if (history.length > 0) {
+                const lastData = history[history.length - 1];
+                const diff = actualSeconds - lastData.duration;
+                if (diff > 0) {
+                    compareTextEl.innerHTML = `相比于上次，你的坚持时间 <span class="text-green-600 font-bold">提升了 ${diff} 秒</span>，能力越来越强了！`;
+                } else if (diff < 0) {
+                    compareTextEl.innerHTML = `相比于上次，你的坚持时间 <span class="text-orange-500 font-bold">缩短了 ${Math.abs(diff)} 秒</span>，但请不要灰心。`;
+                } else {
+                    compareTextEl.innerHTML = `你的表现和上次 <span class="text-blue-500 font-bold">完全持平</span>，发挥很稳定。`;
+                }
+            } else {
+                compareTextEl.innerHTML = `这是你的 <span class="text-blue-600 font-bold">第一次完整记录</span>，这是构建基石的一天！`;
+            }
+
+            const currentRecord = {
+                date: new Date().toISOString(),
+                difficulty: 'L' + (config.difficulty || 2), 
+                expectedDuration: state.totalSecs,
+                duration: actualSeconds,
+                edgeCount: state.edgeCount,
+                ratio: els.report.ratio.innerText,
+                markersData: state.markersData, 
+                tags: [], 
+                comment: "" 
+            };
+            history.push(currentRecord);
+            localStorage.setItem('edge_history', JSON.stringify(history));
+        }
+
+        function saveReportFeedback() {
+            const history = JSON.parse(localStorage.getItem('edge_history') || '[]');
+            if (history.length === 0) return;
+
+            const lastIndex = history.length - 1;
+            const lastRecord = history[lastIndex];
+
+            const selectedTags = Array.from(document.querySelectorAll('#feedback-tags .tag-selected')).map(el => el.innerText.trim());
+            const commentText = document.querySelector('#view-report textarea').value.trim();
+
+            lastRecord.tags = selectedTags;
+            lastRecord.comment = commentText;
+            
+            history[lastIndex] = lastRecord;
+            localStorage.setItem('edge_history', JSON.stringify(history));
+        }
+
+        function toggleTag(btn) {
+            btn.classList.toggle('tag-selected');
+        }
+
+        function goHome() {
+            if (isLockedOut()) {
+                goToAbstinence();
+            } else {
+                switchView('home');
+            }
+        }
+
+        // 修改4: 删除了历史页相关函数 (renderHistory, toggleHistoryView, goToHistory, drawChart)
+
+        // 保留: 历史详情弹窗逻辑 (供禁欲页使用)
+        function showHistoryDetail(index) {
+            const history = JSON.parse(localStorage.getItem('edge_history') || '[]');
+            const record = history[index];
+            if (!record) return;
+
+            const dateObj = new Date(record.date);
+            const fullDate = `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日 ${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}`;
+            const isSuccess = record.duration >= (record.expectedDuration || 0);
+            const durationColor = isSuccess ? 'text-green-600' : 'text-orange-500';
+
+            let markersHTML = '';
+            
+            const timelineBase = record.duration > 0 ? record.duration : 1;
+            const endM = Math.floor(timelineBase / 60).toString().padStart(2, '0');
+            const endS = (timelineBase % 60).toString().padStart(2, '0');
+
+            const isSprint = record.duration > record.expectedDuration;
+            
+            let barBackground = '';
+            if (!isSuccess) {
+                barBackground = 'bg-orange-200';
+            } else if (!isSprint) {
+                barBackground = 'bg-green-500';
+            } else {
+                barBackground = 'bg-transparent';
+            }
+
+            let segmentsHTML = '';
+            if (isSprint) {
+                const goalPercent = (record.expectedDuration / timelineBase) * 100;
+                segmentsHTML = `
+                    <div class="absolute left-0 top-0 bottom-0 bg-green-500 rounded-l-full" style="width: ${goalPercent}%"></div>
+                    <div class="absolute right-0 top-0 bottom-0 bg-gradient-to-r from-green-500 to-purple-500 rounded-r-full" style="left: ${goalPercent}%"></div>
+                    <div class="absolute top-1/2 -translate-y-1/2 flex flex-col items-center z-10" style="left: ${goalPercent}%">
+                         <div class="w-px h-3 bg-white/80"></div>
+                         <div class="absolute -top-3.5 text-[7px] font-bold text-green-700 bg-white/95 px-1 rounded shadow-sm border border-green-200 leading-tight">GOAL</div>
+                    </div>
+                `;
+            } else {
+                segmentsHTML = `<div class="absolute inset-0 ${barBackground} rounded-full"></div>`;
+            }
+
+            let coolingSegmentsHTML = '';
+            if (record.markersData && record.markersData.length > 0) {
+                for (let i = 0; i < record.markersData.length; i++) {
+                    const startData = record.markersData[i];
+                    if (startData.type === 'edge') {
+                        let endElapsed = timelineBase;
+                        if (i + 1 < record.markersData.length) {
+                            const nextData = record.markersData[i+1];
+                            if (nextData.type === 'resume') {
+                                endElapsed = nextData.elapsed;
+                            }
+                        }
+                        const leftPct = (startData.elapsed / timelineBase) * 100;
+                        const widthPct = ((endElapsed - startData.elapsed) / timelineBase) * 100;
+                        
+                        const isAtEnd = (leftPct + widthPct) >= 99;
+                        const roundedClass = isAtEnd ? 'rounded-r-full' : '';
+
+                        coolingSegmentsHTML += `<div class="absolute top-0 bottom-0 bg-cyan-300/80 backdrop-blur-[1px] z-10 ${roundedClass}" style="left: ${leftPct}%; width: ${widthPct}%;"></div>`;
+                    }
+                }
+            }
+
+            if (record.markersData && record.markersData.length > 0) {
+                markersHTML = record.markersData.map(d => {
+                    let percent = (d.elapsed / timelineBase) * 100;
+                    if (percent > 100) percent = 100;
+                    const rightPct = 100 - percent;
+                    const isResume = d.type !== 'edge';
+                    
+                    const colorClass = isResume ? 'bg-emerald-500 ring-1 ring-white' : 'bg-blue-600 ring-1 ring-white'; 
+                    const heightClass = 'h-2.5'; 
+                    
+                    return `
+                        <div class="absolute top-full mt-1 flex flex-col items-center translate-x-1/2 z-20" style="right: ${rightPct}%;">
+                            <div class="w-0.5 ${heightClass} ${colorClass} mb-1 shadow-sm rounded-full"></div>
+                            <div class="text-[8px] text-slate-400 font-mono leading-none scale-90">${d.timeText}</div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                markersHTML = '<div class="absolute inset-0 flex items-center justify-center text-[9px] text-white/50">无打点数据</div>';
+            }
+
+            const tagsHTML = (record.tags && record.tags.length) 
+                ? record.tags.map(t => `<span class="px-2 py-1 bg-slate-100 text-slate-500 rounded text-xs border border-slate-200">${t}</span>`).join('') 
+                : '<span class="text-xs text-slate-300">未记录感受</span>';
+
+            const content = `
+                <div class="space-y-6">
+                    <div class="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1">难度</div>
+                            <div class="font-bold text-indigo-600 text-xs inline-block px-2 py-1 bg-indigo-50 border border-indigo-100 rounded">${record.difficulty || 'L2'}</div>
+                        </div>
+                        <div><div class="text-xs text-slate-400 mb-1">时长</div><div class="font-bold ${durationColor} text-lg mt-1">${Math.floor(record.duration/60)}:${(record.duration%60).toString().padStart(2,'0')}</div></div>
+                        
+                        <div class="flex flex-col items-center w-fit">
+                            <div class="text-xs text-slate-400 mb-1">临界点</div>
+                            <div class="font-bold text-purple-600 text-lg mt-1">${record.edgeCount}</div>
+                        </div>
+                        
+                        <div><div class="text-xs text-slate-400 mb-1">有效比</div><div class="font-bold text-blue-600 text-lg mt-1">${record.ratio || '--'}</div></div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between items-end mb-2">
+                            <span class="text-xs font-bold text-slate-500">过程回顾</span>
+                            <span class="text-[10px] text-slate-300 font-mono">timeline</span>
+                        </div>
+                        <div class="relative w-full h-3 bg-slate-100 rounded-full mb-8 mt-4 border border-slate-50 overflow-visible">
+                            <div class="absolute inset-0 rounded-full overflow-hidden">
+                                ${segmentsHTML}
+                                ${coolingSegmentsHTML}
+                            </div>
+                            ${markersHTML}
+                        </div>
+                        <div class="flex justify-between text-[10px] text-slate-400 font-mono mt-4">
+                            <span>00:00</span>
+                            <span>${endM}:${endS}</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="text-xs font-bold text-slate-500 mb-2">感受记录</div>
+                        <div class="flex flex-wrap gap-2 mb-3">${tagsHTML}</div>
+                        <div class="p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm text-slate-600 italic min-h-[60px]">
+                            "${record.comment || '没有留下文字备注...'}"
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            openModal(fullDate, content);
+        }
+
+        function showLatestReport() {
+            const history = JSON.parse(localStorage.getItem('edge_history') || '[]');
+            if (history.length > 0) {
+                showHistoryDetail(history.length - 1);
+            }
+        }
+
+        function isLockedOut() {
+            const history = JSON.parse(localStorage.getItem('edge_history') || '[]');
+            if (history.length === 0) return false;
+            
+            const lastData = history[history.length - 1];
+            const lastTime = new Date(lastData.date).getTime();
+            const now = Date.now();
+            const hoursPassed = (now - lastTime) / (1000 * 60 * 60);
+            
+            return hoursPassed < USER_PREFS.lockoutHours;
+        }
+
+        function goToAbstinence() {
+            switchView('abstinence');
+            
+            const history = JSON.parse(localStorage.getItem('edge_history') || '[]');
+            if (history.length === 0) return; 
+            
+            const lastData = history[history.length - 1];
+            
+            const m = Math.floor(lastData.duration / 60);
+            const s = (lastData.duration % 60).toString().padStart(2, '0');
+            
+            const isSuccess = lastData.duration >= (lastData.expectedDuration || 0);
+            
+            els.abs.duration.innerText = `${m}:${s}`;
+            els.abs.duration.className = `font-bold text-xl ${isSuccess ? 'text-green-600' : 'text-orange-500'}`;
+
+            els.abs.edge.innerText = lastData.edgeCount;
+            els.abs.ratio.innerText = lastData.ratio || '0%';
+
+            document.getElementById('abs-diff-val').innerText = lastData.difficulty || 'L2';
+
+            const failStreak = history.filter(h => h.duration < h.expectedDuration).length; 
+            if (failStreak > 2) {
+                els.abs.tips.innerText = "最近几次似乎都不太顺利？建议下次尝试 L1 恢复性训练，不要给自己太大压力。";
+            } else if (lastData.duration > lastData.expectedDuration) {
+                els.abs.tips.innerText = "状态极佳！连续的成功意味着你的神经回路正在重塑。保持这个节奏。";
+            } else {
+                els.abs.tips.innerText = "每一次抑制都是在为下一次爆发积蓄能量。好好休息。";
+            }
+
+            if (state.absTimerId) clearInterval(state.absTimerId);
+            state.absTimerId = setInterval(() => {
+                const lastTime = new Date(lastData.date).getTime();
+                const unlockTime = lastTime + (USER_PREFS.lockoutHours * 60 * 60 * 1000);
+                const diff = unlockTime - Date.now();
+
+                if (diff <= 0) {
+                    clearInterval(state.absTimerId);
+                    els.timers.abs.innerText = "00:00:00";
+                    alert("禁欲期结束，你可以开始新的训练了！");
+                    switchView('home');
+                    return;
+                }
+
+                const h = Math.floor(diff / (1000 * 60 * 60)).toString().padStart(2, '0');
+                const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)).toString().padStart(2, '0');
+                const s = Math.floor((diff % (1000 * 60)) / 1000).toString().padStart(2, '0');
+                els.timers.abs.innerText = `${h}:${m}:${s}`;
+
+            }, 1000);
+        }
+
+        // 修改5: 删除了 showEdu JS 函数
+
+        function openModal(title, content) {
+            els.modal.title.innerText = title;
+            els.modal.body.innerHTML = content;
+            els.modal.overlay.classList.remove('hidden');
+            els.modal.overlay.classList.add('flex');
+            setTimeout(() => {
+                els.modal.content.classList.remove('scale-95', 'opacity-0');
+            }, 10);
+        }
+
+        function closeModal() {
+            els.modal.content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                els.modal.overlay.classList.add('hidden');
+                els.modal.overlay.classList.remove('flex');
+            }, 200);
+        }
+
+        function toggleSettings(show) {
+            if (show) {
+                const soundType = USER_PREFS.soundType;
+                const volume = USER_PREFS.volume * 100; 
+                
+                const content = `
+                    <div class="space-y-6">
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-slate-400 uppercase">节拍音色</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button onclick="updateSetting('soundType', 'electronic', this)" class="px-2 py-2 rounded-lg border text-xs font-bold transition ${soundType === 'electronic' ? 'bg-blue-50 border-blue-400 text-blue-600' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}">电子音</button>
+                                <button onclick="updateSetting('soundType', 'heartbeat', this)" class="px-2 py-2 rounded-lg border text-xs font-bold transition ${soundType === 'heartbeat' ? 'bg-red-50 border-red-400 text-red-600' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}">心跳声</button>
+                                <button onclick="updateSetting('soundType', 'wooden', this)" class="px-2 py-2 rounded-lg border text-xs font-bold transition ${soundType === 'wooden' ? 'bg-amber-50 border-amber-400 text-amber-600' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}">木鱼声</button>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2">
+                            <div class="flex justify-between items-center">
+                                <label class="text-xs font-bold text-slate-400 uppercase">节拍音量</label>
+                                <button onclick="previewSound()" class="text-[10px] px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold"><i class="fa-solid fa-volume-high mr-1"></i>试听 (5s)</button>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <i class="fa-solid fa-volume-off text-slate-300 text-xs"></i>
+                                <input type="range" min="0" max="100" value="${volume}" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="updateSetting('volume', this.value)">
+                                <i class="fa-solid fa-volume-high text-slate-300 text-xs"></i>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                            <label class="text-xs font-bold text-slate-500">单次冷却时长 (秒)</label>
+                            <div class="flex items-center gap-2">
+                                <button onclick="adjustVal('coolDuration', -5)" class="w-6 h-6 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 font-bold">-</button>
+                                <span id="val-coolDuration" class="w-8 text-center text-sm font-mono font-bold text-slate-700">${USER_PREFS.coolDuration}</span>
+                                <button onclick="adjustVal('coolDuration', 5)" class="w-6 h-6 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 font-bold">+</button>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                            <label class="text-xs font-bold text-slate-500">禁欲锁定周期 (小时)</label>
+                            <div class="flex items-center gap-2">
+                                <button onclick="adjustVal('lockoutHours', -1)" class="w-6 h-6 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 font-bold">-</button>
+                                <span id="val-lockoutHours" class="w-8 text-center text-sm font-mono font-bold text-slate-700">${USER_PREFS.lockoutHours}</span>
+                                <button onclick="adjustVal('lockoutHours', 1)" class="w-6 h-6 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 font-bold">+</button>
+                            </div>
+                        </div>
+
+                        <div class="pt-2">
+                            <button onclick="clearData()" class="w-full py-3 text-red-500 font-bold border border-red-200 rounded-xl hover:bg-red-50 transition text-sm flex items-center justify-center gap-2">
+                                <i class="fa-regular fa-trash-can"></i> 清除所有历史数据
+                            </button>
+                            <div class="text-[10px] text-slate-300 mt-3 text-center">当前版本 v1.0 · Settings Saved Locally</div>
+                        </div>
+                    </div>
+                `;
+                openModal("系统偏好设置", content);
+            }
+        }
+
+        function updateSetting(key, val, btnEl) {
+            if (key === 'volume') {
+                USER_PREFS.volume = parseInt(val) / 100;
+            } else if (key === 'soundType') {
+                USER_PREFS.soundType = val;
+                const container = btnEl.parentNode;
+                Array.from(container.children).forEach(btn => {
+                    btn.className = 'px-2 py-2 rounded-lg border text-xs font-bold transition border-slate-200 text-slate-500 hover:bg-slate-50';
+                });
+                if(val === 'electronic') btnEl.className = 'px-2 py-2 rounded-lg border text-xs font-bold transition bg-blue-50 border-blue-400 text-blue-600';
+                if(val === 'heartbeat') btnEl.className = 'px-2 py-2 rounded-lg border text-xs font-bold transition bg-red-50 border-red-400 text-red-600';
+                if(val === 'wooden') btnEl.className = 'px-2 py-2 rounded-lg border text-xs font-bold transition bg-amber-50 border-amber-400 text-amber-600';
+                
+                previewSound(); 
+            }
+            saveUserPrefs();
+        }
+
+        function adjustVal(key, delta) {
+            let newVal = USER_PREFS[key] + delta;
+            if (key === 'coolDuration' && newVal < 10) newVal = 10;
+            if (key === 'lockoutHours' && newVal < 0) newVal = 0;
+            
+            USER_PREFS[key] = newVal;
+            document.getElementById('val-' + key).innerText = newVal;
+            saveUserPrefs();
+        }
+
+        function clearData() {
+            if (confirm("确定要删除所有训练记录吗？此操作不可撤销。")) {
+                localStorage.removeItem('edge_history');
+                alert("数据已清除。");
+                closeModal();
+                location.reload();
+            }
+        }
+
+    </script>
+</body>
+</html>

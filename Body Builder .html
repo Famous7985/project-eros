@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Body Recomp Console</title>
+    <style>
+        :root {
+            --bg-color: #F3F4F6;
+            --card-bg: #FFFFFF;
+            --text-main: #1F2937;
+            --text-muted: #9CA3AF;
+            --border-color: #E5E7EB;
+            --primary-blue: #3B82F6;
+            --success-green: #10B981;
+            --gold: #F59E0B;
+            --checkbox-size: 32px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.5s ease;
+        }
+
+        /* 主容器 */
+        .dashboard-container {
+            background: var(--card-bg);
+            width: 700px; /*稍微收窄一点，适合清单列表*/
+            max-width: 95%;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        /* 顶部进度条 */
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background-color: #E5E7EB;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background-color: var(--primary-blue);
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.5s ease;
+        }
+
+        /* 头部信息 */
+        .header {
+            padding: 40px 40px 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .date-display {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            color: var(--text-main);
+        }
+
+        .status-badge {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 6px;
+        }
+
+        /* 列表布局 */
+        .list-container {
+            display: flex;
+            flex-direction: column;
+            padding: 0 40px 40px 40px;
+        }
+
+        /* 每一行 */
+        .exercise-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 24px 0;
+            border-bottom: 1px solid var(--border-color);
+            transition: background-color 0.2s;
+        }
+
+        .exercise-row:last-child {
+            border-bottom: none;
+        }
+
+        .exercise-info {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .exercise-name {
+            font-weight: 600;
+            font-size: 1.125rem; /* 加大字号 */
+            color: var(--text-main);
+        }
+
+        .exercise-detail {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; /* 使用等宽字体显示数字区间，更有仪表盘感 */
+        }
+
+        /* 复选框样式 */
+        .custom-checkbox {
+            width: 40px; /* 加大尺寸 */
+            height: 40px;
+            border: 2px solid var(--border-color);
+            border-radius: 10px; /* 更圆润 */
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            background-color: white;
+            flex-shrink: 0;
+        }
+
+        .custom-checkbox:hover {
+            border-color: var(--primary-blue);
+            transform: scale(1.05);
+            background-color: #F0F9FF;
+        }
+
+        .custom-checkbox:active {
+            transform: scale(0.95);
+        }
+
+        /* 选中状态 */
+        .custom-checkbox.checked {
+            background-color: var(--primary-blue);
+            border-color: var(--primary-blue);
+        }
+
+        /* 勾选图标 */
+        .checkmark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            width: 24px;
+            height: 24px;
+            fill: white;
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .custom-checkbox.checked .checkmark {
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        /* 完成状态特效 */
+        body.all-completed {
+            background-color: #ECFDF5;
+        }
+        
+        body.all-completed .dashboard-container {
+            box-shadow: 0 20px 25px -5px rgba(16, 185, 129, 0.15), 0 10px 10px -5px rgba(16, 185, 129, 0.1);
+            border: 1px solid #D1FAE5;
+        }
+
+        body.all-completed .progress-bar {
+            background-color: var(--success-green);
+            box-shadow: 0 0 10px var(--success-green);
+        }
+
+        body.all-completed .custom-checkbox.checked {
+            background-color: var(--success-green);
+            border-color: var(--success-green);
+        }
+
+        body.all-completed .status-badge {
+            color: var(--success-green);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        <!-- 顶部进度条 -->
+        <div class="progress-bar-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+
+        <!-- 头部 -->
+        <div class="header">
+            <div class="header-left">
+                <div class="date-display" id="dateDisplay">Loading...</div>
+                <div class="status-badge" id="statusBadge">Daily Tasks</div>
+            </div>
+            <!-- 移除了难度选择器 -->
+        </div>
+
+        <!-- 列表容器 -->
+        <div class="list-container" id="listContainer">
+            <!-- JS 动态生成内容 -->
+        </div>
+    </div>
+
+    <script>
+        // --- 1. 配置与常量 ---
+        const STORAGE_KEY = 'body_builder_data';
+        const today = new Date();
+        const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+        const dateStr = today.toLocaleDateString('zh-CN', dateOptions);
+        const dateKey = today.getFullYear() + '-' + 
+                        String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                        String(today.getDate()).padStart(2, '0');
+
+        // 新的动作配置
+        const EXERCISES = [
+            { name: "平板支撑 (Plank)", range: "45-60 秒" },
+            { name: "深蹲 (Squat)", range: "20-30 次" },
+            { name: "俯卧撑 (Push-up)", range: "10-15 次" },
+            { name: "卷腹 (Crunch)", range: "15-20 次" },
+            { name: "开合跳/跑步 (Cardio)", range: "30-60 秒 / 1-2 KM" }
+        ];
+
+        // --- 2. 状态管理 ---
+        // 简化为一维数组，长度5
+        let workoutState = Array(5).fill(false);
+
+        document.getElementById('dateDisplay').textContent = dateStr;
+
+        // --- 3. 核心逻辑 ---
+
+        function loadState() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                try {
+                    const allData = JSON.parse(saved);
+                    if (allData && allData[dateKey]) {
+                        const todayData = allData[dateKey];
+                        
+                        // 兼容性与数据迁移逻辑
+                        if (todayData.state) {
+                            // 如果是旧版本的多维数组，或者长度不匹配，直接重置，避免错乱
+                            // 因为动作列表变了，旧的勾选状态其实没有参考意义了
+                            if (Array.isArray(todayData.state) && todayData.state.length === 5 && !Array.isArray(todayData.state[0])) {
+                                workoutState = todayData.state;
+                            } else {
+                                console.log("New schema detected, resetting daily state.");
+                            }
+                        } 
+                        // 处理 V1 旧旧版本数据 (直接是数组的情况)
+                        else if (Array.isArray(todayData)) {
+                             // 如果是二维数组，重置
+                             if (Array.isArray(todayData[0])) {
+                                 console.log("Migrating from 2D grid to simple list.");
+                             } else if (todayData.length === 5) {
+                                 workoutState = todayData;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("Data Parse Error", e);
+                }
+            }
+        }
+
+        function saveState() {
+            let allData = {};
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                try {
+                    allData = JSON.parse(saved);
+                } catch (e) { allData = {}; }
+            }
+
+            // 新的数据结构：state 只是一个简单的 [true, false...]
+            allData[dateKey] = {
+                version: "v3_simple",
+                state: workoutState
+            };
+
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
+            updateUI(); 
+        }
+
+        // --- 4. 渲染逻辑 ---
+        
+        function renderList() {
+            const container = document.getElementById('listContainer');
+            container.innerHTML = ''; 
+
+            EXERCISES.forEach((ex, index) => {
+                const row = document.createElement('div');
+                row.className = 'exercise-row';
+
+                // 左侧信息
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'exercise-info';
+                
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'exercise-name';
+                nameDiv.textContent = ex.name;
+
+                const detailDiv = document.createElement('div');
+                detailDiv.className = 'exercise-detail';
+                detailDiv.textContent = `建议: ${ex.range}`;
+
+                infoDiv.appendChild(nameDiv);
+                infoDiv.appendChild(detailDiv);
+
+                // 右侧复选框
+                const checkbox = document.createElement('div');
+                checkbox.className = 'custom-checkbox';
+                checkbox.dataset.index = index;
+                // SVG 图标
+                checkbox.innerHTML = '<svg class="checkmark" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+
+                // 点击事件
+                checkbox.addEventListener('click', function() {
+                    toggleCheck(index);
+                });
+
+                row.appendChild(infoDiv);
+                row.appendChild(checkbox);
+                container.appendChild(row);
+            });
+        }
+
+        function toggleCheck(index) {
+            workoutState[index] = !workoutState[index];
+            saveState();
+        }
+
+        function updateUI() {
+            let completedCount = 0;
+            const totalRequired = 5;
+
+            // 统计完成数
+            workoutState.forEach(done => {
+                if (done) completedCount++;
+            });
+
+            // 更新复选框样式
+            const checkboxes = document.querySelectorAll('.custom-checkbox');
+            checkboxes.forEach(box => {
+                const idx = parseInt(box.dataset.index);
+                if (workoutState[idx]) {
+                    box.classList.add('checked');
+                } else {
+                    box.classList.remove('checked');
+                }
+            });
+
+            // 更新进度条
+            const percent = (completedCount / totalRequired) * 100;
+            document.getElementById('progressBar').style.width = `${percent}%`;
+
+            // 更新状态文字
+            const badge = document.getElementById('statusBadge');
+            if (percent === 100) {
+                badge.textContent = "ALL TASKS COMPLETED";
+                document.body.classList.add('all-completed');
+            } else {
+                badge.textContent = `${completedCount} / ${totalRequired} COMPLETED`;
+                document.body.classList.remove('all-completed');
+            }
+        }
+
+        // 初始化
+        loadState();
+        renderList();
+        updateUI();
+
+    </script>
+</body>
+</html>

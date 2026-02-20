@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Eros - System Access</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <script>
+        // 保持 demo 1.html 的配置
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        eros: {
+                            dark: '#f1f5f9',   // 浅色主背景
+                            panel: '#ffffff',  // 浅色面板/侧边栏
+                            accent: '#059669', // Emerald 600
+                            muted: '#64748b',
+                            text: '#334155',
+                            locked: '#94a3b8'
+                        }
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'fade-in': 'fadeIn 0.5s ease-out forwards',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        }
+                    },
+                    transitionProperty: {
+                        'height': 'height',
+                        'spacing': 'margin, padding',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f1f5f9; color: #334155; font-family: 'Inter', sans-serif; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .sidebar-transition { transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        .submenu-transition { transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out; }
+        #sidebar nav button.nav-selected::before { content: ''; position: absolute; left: 0; top: 0.5rem; bottom: 0.5rem; width: 4px; background: #059669; border-radius: 0 4px 4px 0; }
+        
+        .input-focus-ring:focus {
+            box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.1);
+            border-color: #059669;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden bg-[#f1f5f9]">
+
+    <!-- 全局加载遮罩 -->
+    <div id="global-loader" class="fixed inset-0 z-[100] bg-[#f1f5f9] flex items-center justify-center transition-opacity duration-500">
+        <div class="flex flex-col items-center">
+            <div class="w-12 h-12 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
+            <div class="mt-4 text-xs font-bold text-slate-400 tracking-[0.2em]">CONNECTING...</div>
+        </div>
+    </div>
+
+    <!-- 视图容器 -->
+    <div id="app-root" class="h-full w-full relative"></div>
+
+    <!-- 模态框 (通用) -->
+    <div id="modal-overlay" onclick="closeModal(event)" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 transition-opacity duration-300">
+        <div id="modal-content" class="bg-eros-panel border border-slate-200 rounded-xl p-6 w-full max-w-2xl shadow-2xl transform scale-95 transition-transform duration-300 max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div class="flex justify-between items-start mb-4 border-b border-slate-100 pb-2">
+                <h3 id="modal-title" class="text-2xl font-bold text-slate-800 tracking-wide"></h3>
+                <button onclick="toggleModal(false)" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+            </div>
+            <div id="modal-body" class="text-slate-600 mb-6 leading-relaxed space-y-6"></div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. 配置
+        // ==========================================
+        const SUPABASE_URL = 'https://lefnurifchnrbxnnfpsf.supabase.co'; 
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxlZm51cmlmY2hucmJ4bm5mcHNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMDA0NzksImV4cCI6MjA4Njg3NjQ3OX0.KoxFeIH3Dc3GYovb2yPVTc0qJXQVQ6HpkMjBTv4jNdU';
+        
+        let supabaseClient = null; 
+        let currentUser = null;
+        const DB_KEY = 'eros_v5_fixed_data';
+
+        const defaultSchema = {
+            user: { username: "", is_activated: true },
+            settings: { theme: "light", sound_enabled: true },
+            campaign: { current_stage: 1, stage_progress: 0, completed_tasks: {} },
+            daily_logs: {} 
+        };
+
+        let currentTab = 'map'; 
+        let currentSubTab = ''; 
+        let isSidebarExpanded = true;
+        let isCoreMenuExpanded = false; 
+        let runtimeData = null;
+
+        // ==========================================
+        // 云端数据同步管理器 (SyncManager)
+        // ==========================================
+        const SYNC_KEYS = [
+            'eros_v5_fixed_data', 'edge_history', 'kegel_history',
+            'body_builder_data', 'user_size_data', 'eros_daily_logs',
+            'edge_prefs', 'rest_days'
+        ];
+
+        const SyncManager = {
+            syncing: false,
+            
+            packLocalData: function() {
+                const payload = {};
+                SYNC_KEYS.forEach(key => {
+                    const val = localStorage.getItem(key);
+                    if (val) {
+                        try { payload[key] = JSON.parse(val); } catch(e) { payload[key] = val; }
+                    }
+                });
+                return payload;
+            },
+
+            unpackCloudData: function(payload) {
+                if (!payload) return;
+                SYNC_KEYS.forEach(key => {
+                    if (payload[key] !== undefined) {
+                        localStorage.setItem(key, typeof payload[key] === 'object' ? JSON.stringify(payload[key]) : payload[key]);
+                    }
+                });
+            },
+
+            pullFromCloud: async function() {
+                if (!currentUser || !supabaseClient) return;
+                try {
+                    const { data, error } = await supabaseClient
+                        .from('user_data')
+                        .select('payload')
+                        .eq('user_id', currentUser.id)
+                        .single();
+                        
+                    if (error && error.code !== 'PGRST116') throw error; 
+                    
+                    if (data && data.payload) {
+                        this.unpackCloudData(data.payload);
+                        console.log("✅ 从云端同步数据成功");
+                    } else {
+                        console.log("☁️ 云端无数据，准备首次推送");
+                    }
+                } catch (err) {
+                    console.error("❌ 拉取云端数据失败:", err);
+                }
+            },
+
+            pushToCloud: async function() {
+                if (!currentUser || !supabaseClient || this.syncing) return;
+                this.syncing = true;
+                try {
+                    const payload = this.packLocalData();
+                    const { error } = await supabaseClient
+                        .from('user_data')
+                        .upsert({ 
+                            user_id: currentUser.id, 
+                            payload: payload,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'user_id' });
+                        
+                    if (error) throw error;
+                    console.log("☁️ 数据已同步至云端", new Date().toLocaleTimeString());
+                } catch (err) {
+                    console.error("❌ 推送数据失败:", err);
+                } finally {
+                    this.syncing = false;
+                }
+            }
+        };
+
+        let syncTimeout = null;
+        function scheduleSync() {
+            if (syncTimeout) clearTimeout(syncTimeout);
+            syncTimeout = setTimeout(() => SyncManager.pushToCloud(), 2000);
+        }
+
+        function startAutoSync() {
+            window.addEventListener('storage', (e) => {
+                if (SYNC_KEYS.includes(e.key)) scheduleSync();
+            });
+            setInterval(() => SyncManager.pushToCloud(), 60000);
+        }
+
+        // ==========================================
+        // 2. 初始化流程
+        // ==========================================
+        async function initApp() {
+            try {
+                if (window.supabase) {
+                    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                    console.log("✅ Supabase Ready");
+                    
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    
+                    if (session) {
+                        console.log("已登录");
+                        currentUser = session.user;
+                        await enterMainSystem(); 
+                    } else {
+                        console.log("未登录");
+                        renderWelcome(); 
+                    }
+                } else {
+                    throw new Error("SDK Missing");
+                }
+            } catch (err) {
+                console.error(err);
+                renderWelcome();
+            } finally {
+                setTimeout(() => {
+                    const loader = document.getElementById('global-loader');
+                    if(loader) {
+                        loader.style.opacity = '0';
+                        setTimeout(() => loader.style.display = 'none', 500);
+                    }
+                }, 500);
+            }
+        }
+
+        // ==========================================
+        // 3. 页面渲染函数
+        // ==========================================
+
+        function renderWelcome() {
+            const root = document.getElementById('app-root');
+            root.innerHTML = `
+                <div class="flex h-full items-center justify-center bg-eros-dark relative overflow-hidden">
+                    <div class="absolute inset-0 z-0 opacity-20">
+                        <div class="absolute top-1/4 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent"></div>
+                        <div class="absolute bottom-1/4 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent"></div>
+                    </div>
+                    <div class="z-10 text-center p-8 animate-fade-in">
+                        <h1 class="text-5xl md:text-7xl font-bold tracking-[0.2em] text-white mb-6 drop-shadow-lg" style="color: #334155;">PROJECT EROS</h1>
+                        <p class="text-lg md:text-xl text-slate-400 font-light tracking-widest mb-12">一个颠覆性的全栈男性成长系统</p>
+                        <button onclick="renderLoginPage()" class="group relative px-8 py-3 bg-transparent border border-emerald-500/50 text-emerald-600 font-medium tracking-widest uppercase transition-all duration-300 hover:bg-emerald-500/10 hover:border-emerald-400 hover:text-emerald-700 hover:shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                            <span class="relative z-10">开始使用</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderLoginPage() {
+            const root = document.getElementById('app-root');
+            root.innerHTML = `
+                <div class="flex h-full items-center justify-center animate-fade-in px-4">
+                    <div class="w-full max-w-[420px] bg-white p-10 rounded-2xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] border border-slate-100">
+                        <div class="mb-10 text-center">
+                            <h1 class="text-3xl font-extrabold tracking-widest text-slate-800">PROJECT EROS</h1>
+                            <p class="text-[10px] font-bold text-emerald-600 tracking-[0.4em] mt-3 uppercase">Tactical Social System</p>
+                        </div>
+                        <div class="space-y-5">
+                            <input type="text" id="input-name" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm font-medium text-slate-700 placeholder-slate-400 focus:outline-none input-focus-ring transition-all" placeholder="Operator ID (你的代号)">
+                            <input type="password" id="input-key" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm font-medium text-slate-700 placeholder-slate-400 focus:outline-none input-focus-ring transition-all" placeholder="Access Key (设置密码)">
+                            <input type="text" id="input-code" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm font-medium text-slate-700 placeholder-slate-400 focus:outline-none input-focus-ring transition-all" placeholder="Activation Code (激活码)">
+                            
+                            <button onclick="handleLoginAction()" id="btn-action" class="w-full bg-[#059669] hover:bg-[#047857] text-white text-sm font-bold py-4 rounded-lg shadow-lg shadow-emerald-500/30 transition-all duration-300 transform active:scale-[0.98] mt-2 tracking-wide">
+                                INITIALIZE SYSTEM
+                            </button>
+                            
+                            <div class="text-center mt-6">
+                                <button onclick="renderWelcome()" class="text-xs font-bold text-slate-400 hover:text-slate-600 transition border-b border-transparent hover:border-slate-400 pb-0.5">Back to Cover</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // [改动点] 增强版登录鉴权与激活码校验
+        // ==========================================
+        async function handleLoginAction() {
+            const nickname = document.getElementById('input-name').value.trim();
+            const password = document.getElementById('input-key').value.trim();
+            const code = document.getElementById('input-code').value.trim();
+            const btn = document.getElementById('btn-action');
+
+            if (!nickname || !password || !code) return alert("请填写完整信息：代号、密码和激活码");
+            if (password.length < 6) return alert("为了安全，密码至少6位");
+
+            const originalText = btn.innerText;
+            btn.innerText = "VERIFYING...";
+            btn.classList.add("opacity-75", "cursor-wait");
+
+            const fakeEmail = `${code}@eros.internal`; 
+
+            try {
+                // 1. 老用户尝试直接登录
+                let { data, error } = await supabaseClient.auth.signInWithPassword({ 
+                    email: fakeEmail, 
+                    password: password 
+                });
+
+                if (error) {
+                    console.log("未找到档案，尝试激活新身份...");
+                    
+                    // [新增逻辑]: 先去 activation_codes 表查询这枚激活码是否有效
+                    const { data: codeData, error: codeError } = await supabaseClient
+                        .from('activation_codes')
+                        .select('is_used')
+                        .eq('code', code)
+                        .single();
+
+                    if (codeError || !codeData) {
+                        throw new Error("无效的激活码！请确认输入是否正确。");
+                    }
+                    if (codeData.is_used) {
+                        throw new Error("该激活码已被使用！");
+                    }
+
+                    console.log("激活码有效，正在创建身份...");
+                    
+                    // 2. 激活码有效，允许注册
+                    const signUp = await supabaseClient.auth.signUp({ 
+                        email: fakeEmail, 
+                        password: password,
+                        options: {
+                            data: { 
+                                display_name: nickname,
+                                activation_code: code 
+                            }
+                        }
+                    });
+
+                    if (signUp.error) throw signUp.error;
+                    
+                    if (signUp.data.user && !signUp.data.session) {
+                        alert("⚠️ 系统提示：\n请联系管理员在后台关闭 Email Confirm 设置。");
+                        btn.innerText = originalText;
+                        btn.classList.remove("opacity-75", "cursor-wait");
+                        return;
+                    }
+
+                    // [新增逻辑]: 注册成功后，立即销毁这枚激活码 (标记为已使用)
+                    const { error: updateError } = await supabaseClient
+                        .from('activation_codes')
+                        .update({ is_used: true, used_by: signUp.data.user.id })
+                        .eq('code', code);
+                        
+                    if (updateError) console.error("标记激活码已使用时出错:", updateError);
+
+                    data = signUp.data;
+                }
+
+                if (data.user) {
+                    currentUser = data.user;
+                    await enterMainSystem();
+                }
+
+            } catch (err) {
+                alert("❌ 验证失败: " + err.message);
+                btn.innerText = originalText;
+                btn.classList.remove("opacity-75", "cursor-wait");
+            }
+        }
+
+        async function enterMainSystem() {
+            await SyncManager.pullFromCloud();
+
+            const saved = localStorage.getItem(DB_KEY);
+            if (saved) {
+                try { runtimeData = JSON.parse(saved); if (!runtimeData.campaign.completed_tasks) runtimeData.campaign.completed_tasks = {}; } catch(e) {}
+            }
+            
+            if (!runtimeData) {
+                const onlineName = currentUser.user_metadata?.display_name || "Operator";
+                runtimeData = JSON.parse(JSON.stringify(defaultSchema));
+                runtimeData.user.username = onlineName;
+                localStorage.setItem(DB_KEY, JSON.stringify(runtimeData));
+                
+                SyncManager.pushToCloud();
+            }
+            
+            renderDashboardSkeleton();
+            updateDashboardUI();
+            
+            startAutoSync();
+        }
+
+        function renderDashboardSkeleton() {
+            const root = document.getElementById('app-root');
+            root.innerHTML = `
+                <div class="flex h-screen bg-eros-dark font-sans animate-fade-in" id="dashboard-container">
+                    <aside id="sidebar" class="w-64 bg-eros-panel border-r border-slate-200 flex flex-col sidebar-transition relative z-20 flex-shrink-0">
+                        <div id="sidebar-header" class="h-16 flex items-center px-4 border-b border-slate-100 overflow-hidden flex-shrink-0 justify-between transition-all duration-300">
+                            <span id="logo-text" class="text-xl font-bold tracking-widest text-slate-800 whitespace-nowrap overflow-hidden transition-all duration-300">EROS</span>
+                            <button onclick="toggleSidebar()" class="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 transition flex-shrink-0"><i class="fa-solid fa-bars"></i></button>
+                        </div>
+                        
+                        <nav id="sidebar-nav" class="flex-1 p-2 space-y-2 overflow-y-auto scrollbar-hide select-none">
+                            <button onclick="switchTab('map')" id="nav-map" class="nav-item w-full text-left py-3 rounded transition-all duration-200 flex items-center group relative overflow-hidden pl-4 pr-3">
+                                <span class="nav-icon-wrap w-8 flex justify-center text-lg group-hover:scale-110 transition-transform">🗺️</span>
+                                <span class="font-medium whitespace-nowrap opacity-100 transition-opacity duration-300 nav-text text-sm ml-2">进阶地图</span>
+                            </button>
+                            
+                            <div class="flex flex-col">
+                                <button onclick="toggleCoreMenu()" id="nav-core" class="nav-item w-full text-left py-3 rounded transition-all duration-200 flex items-center group pl-4 pr-3">
+                                    <div id="core-inner-wrapper" class="flex items-center min-w-0 flex-1 justify-start">
+                                        <span class="nav-icon-wrap w-8 flex justify-center text-lg group-hover:scale-110 transition-transform">🧠</span>
+                                        <span class="font-medium whitespace-nowrap opacity-100 transition-opacity duration-300 nav-text text-sm ml-2">核心引擎</span>
+                                    </div>
+                                    <i id="core-arrow" class="fa-solid fa-chevron-down text-xs text-slate-400 transform transition-transform duration-300 nav-text flex-shrink-0 ml-1"></i>
+                                </button>
+                                <div id="core-submenu" class="overflow-hidden max-h-0 submenu-transition bg-slate-50 rounded-b">
+                                    <button onclick="switchTab('core', 'blockA')" class="w-full text-left pl-14 pr-4 py-2 text-xs text-slate-500 hover:text-eros-accent hover:bg-slate-100 transition block nav-text whitespace-nowrap">硬件训练</button>
+                                </div>
+                            </div>
+                            
+                            <button onclick="switchTab('logs')" id="nav-logs" class="nav-item w-full text-left py-3 rounded transition-all duration-200 flex items-center group relative overflow-hidden pl-4 pr-3">
+                                <span class="nav-icon-wrap w-8 flex justify-center text-slate-400 group-hover:scale-110 transition-transform"><i class="fa-solid fa-book"></i></span>
+                                <span class="font-medium whitespace-nowrap opacity-100 transition-opacity duration-300 nav-text text-sm ml-2">训练日志</span>
+                            </button>
+                            
+                            <button onclick="switchTab('settings')" id="nav-settings" class="nav-item w-full text-left py-3 rounded transition-all duration-200 flex items-center group relative overflow-hidden pl-4 pr-3">
+                                <span class="nav-icon-wrap w-8 flex justify-center text-lg group-hover:scale-110 transition-transform">⚙️</span>
+                                <span class="font-medium whitespace-nowrap opacity-100 transition-opacity duration-300 nav-text text-sm ml-2">系统设置</span>
+                            </button>
+                        </nav>
+                        
+                        <div id="sidebar-footer" class="p-4 border-t border-slate-200 bg-slate-50 overflow-hidden transition-all duration-300">
+                            <div onclick="switchTab('profile')" class="bg-white rounded p-2 text-center border border-slate-200 whitespace-nowrap transition-all duration-300 shadow-sm cursor-pointer hover:border-emerald-400 hover:shadow-md group">
+                                <span class="text-[10px] text-slate-400 block mb-0.5 group-hover:text-emerald-600 transition-colors nav-text">Operator ID</span>
+                                <span class="text-xs font-mono text-slate-600 font-bold group-hover:text-slate-800" id="user-display">--</span>
+                            </div>
+                        </div>
+                    </aside>
+                    <main class="flex-1 flex flex-col min-w-0 bg-eros-dark relative overflow-hidden">
+                        <header class="h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-6 z-10 sticky top-0 flex-shrink-0">
+                            <h2 id="page-title" class="text-slate-700 font-medium tracking-wide whitespace-nowrap overflow-hidden text-ellipsis">SYSTEM</h2>
+                            <button onclick="logout()" class="p-2 text-slate-400 hover:text-red-500 transition" title="Logout"><i class="fa-solid fa-power-off"></i></button>
+                        </header>
+                        <div id="main-content" class="flex-1 overflow-y-auto scrollbar-hide relative animate-fade-in p-0"></div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderMapContent() {
+            return `<iframe src="进阶地图 .html" class="w-full h-full border-0" title="进阶地图"></iframe>`;
+        }
+
+        function updateDashboardUI() {
+            const sidebar = document.getElementById('sidebar');
+            const sidebarHeader = document.getElementById('sidebar-header');
+            const logoText = document.getElementById('logo-text');
+            const navItems = document.querySelectorAll('.nav-item');
+            const navTexts = document.querySelectorAll('.nav-text');
+            const coreArrow = document.getElementById('core-arrow');
+            const coreInnerWrapper = document.getElementById('core-inner-wrapper');
+
+            if (isSidebarExpanded) {
+                sidebar.classList.remove('w-20'); sidebar.classList.add('w-64');
+                sidebarHeader.classList.remove('justify-center', 'px-0'); 
+                sidebarHeader.classList.add('justify-between', 'px-4');
+                logoText.classList.remove('hidden', 'w-0');
+                logoText.style.opacity = '1';
+                
+                navItems.forEach(el => {
+                    el.classList.remove('justify-center', 'px-0'); 
+                    el.classList.add('pl-4', 'pr-3'); 
+                });
+
+                if (coreInnerWrapper) {
+                    coreInnerWrapper.classList.add('flex-1', 'justify-start');
+                    coreInnerWrapper.classList.remove('justify-center', 'w-full'); 
+                }
+
+                navTexts.forEach(el => { 
+                    el.style.display = 'inline-block';
+                    setTimeout(() => el.style.opacity = '1', 50);
+                });
+                coreArrow.style.display = 'block';
+
+            } else {
+                sidebar.classList.remove('w-64'); sidebar.classList.add('w-20');
+                sidebarHeader.classList.remove('justify-between', 'px-4'); 
+                sidebarHeader.classList.add('justify-center', 'px-0');
+                logoText.style.opacity = '0';
+                logoText.classList.add('hidden', 'w-0'); 
+
+                navItems.forEach(el => {
+                    el.classList.remove('pl-4', 'pr-3'); 
+                    el.classList.add('justify-center', 'px-0'); 
+                });
+
+                if (coreInnerWrapper) {
+                    coreInnerWrapper.classList.remove('flex-1', 'justify-start'); 
+                    coreInnerWrapper.classList.add('justify-center', 'w-full'); 
+                }
+
+                navTexts.forEach(el => { 
+                    el.style.opacity = '0'; 
+                    el.style.display = 'none'; 
+                });
+            }
+
+            const coreSubmenu = document.getElementById('core-submenu');
+            if (isCoreMenuExpanded && isSidebarExpanded) {
+                coreSubmenu.style.maxHeight = '200px'; coreSubmenu.style.opacity = '1'; coreSubmenu.style.marginTop = '0.5rem';
+                coreArrow.style.transform = 'rotate(180deg)';
+            } else {
+                coreSubmenu.style.maxHeight = '0'; coreSubmenu.style.opacity = '0'; coreSubmenu.style.marginTop = '0';
+                coreArrow.style.transform = 'rotate(0deg)';
+            }
+
+            ['nav-map', 'nav-core', 'nav-logs', 'nav-settings'].forEach(id => {
+                const el = document.getElementById(id);
+                el.classList.remove('bg-slate-200', 'text-eros-accent', 'nav-selected', 'text-slate-400');
+                if (currentTab === id.replace('nav-', '')) {
+                    el.classList.add('bg-slate-200', 'text-eros-accent', 'nav-selected');
+                } else {
+                    el.classList.add('text-slate-400');
+                }
+            });
+
+            document.getElementById('user-display').innerText = runtimeData.user.username || "Operator";
+            document.getElementById('page-title').innerText = getTabTitle();
+            renderMainContent();
+        }
+
+        function getTabTitle() {
+            if (currentTab === 'core') {
+                if (currentSubTab === 'blockA') return 'CORE ENGINE // 硬件训练';
+                return 'CORE ENGINE // 战术核心';
+            }
+            const titles = { 
+                'map': 'CAMPAIGN MAP // 进阶地图', 
+                'logs': 'TRAINING LOGS // 训练日志', 
+                'settings': 'SYSTEM SETTINGS // 设置',
+                'profile': 'OPERATOR PROFILE // 身份档案'
+            };
+            return titles[currentTab] || 'SYSTEM';
+        }
+
+        function renderMainContent() {
+            const container = document.getElementById('main-content');
+            let contentHTML = '';
+            
+            if (currentTab === 'map') { contentHTML = renderMapContent(); } 
+            else if (currentTab === 'core') {
+                 contentHTML = `<iframe src="硬件仪表盘 .html" class="w-full h-full min-h-[600px] border-0 rounded-lg"></iframe>`;
+            } else if (currentTab === 'logs') contentHTML = `<iframe src="训练日志 .html" class="w-full h-full border-0"></iframe>`;
+            else if (currentTab === 'profile') contentHTML = `<iframe src="Profile Card .html" class="w-full h-full border-0"></iframe>`;
+            else if (currentTab === 'settings') {
+                contentHTML = `<iframe src="System Settings .html" class="w-full h-full border-0"></iframe>`;
+            }
+            container.innerHTML = contentHTML;
+        }
+
+        function toggleSidebar() { isSidebarExpanded = !isSidebarExpanded; updateDashboardUI(); }
+        function toggleCoreMenu() { if (!isSidebarExpanded) { isSidebarExpanded = true; isCoreMenuExpanded = true; } else { isCoreMenuExpanded = !isCoreMenuExpanded; } updateDashboardUI(); }
+        
+        function switchTab(tab, subTab = null) { 
+            currentTab = tab; 
+            currentSubTab = subTab; 
+            if (tab === 'core' && !subTab) { toggleCoreMenu(); } 
+            updateDashboardUI(); 
+            
+            scheduleSync();
+        }
+        
+        async function logout() {
+            if (confirm("确定断开连接？系统会自动保存进度。")) {
+                await SyncManager.pushToCloud();
+                if (window.supabase && supabaseClient) {
+                    await supabaseClient.auth.signOut();
+                }
+                location.reload();
+            }
+        }
+        
+        window.logout = logout;
+
+        window.toggleModal = function(show) {
+            const overlay = document.getElementById('modal-overlay');
+            const content = document.getElementById('modal-content');
+            if(!show) {
+                overlay.classList.add('opacity-0'); content.classList.remove('scale-100'); content.classList.add('scale-95');
+                setTimeout(() => overlay.classList.add('hidden'), 300);
+            }
+        }
+        window.closeModal = function(e) { if(e.target.id === 'modal-overlay') toggleModal(false); }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>

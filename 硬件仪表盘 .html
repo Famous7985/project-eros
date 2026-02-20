@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bio-Hacking Console V3.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #334155; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* 卡片基础交互 */
+        .dashboard-card {
+            background: white; border-radius: 1rem; border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden; position: relative;
+        }
+        .dashboard-card:hover { transform: translateY(-4px); box-shadow: 0 12px 20px -5px rgba(0,0,0,0.08); }
+        
+        /* 颜色定义 */
+        .theme-green { --main: #10b981; --bg: #ecfdf5; --border: #a7f3d0; } /* Size */
+        .theme-blue { --main: #3b82f6; --bg: #eff6ff; --border: #bfdbfe; }  /* Hardness */
+        .theme-orange { --main: #f97316; --bg: #fff7ed; --border: #fed7aa; } /* Time */
+
+        /* 动态翻转效果 (左侧卡片) */
+        .flip-container { perspective: 1000px; }
+        .flip-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s; transform-style: preserve-3d; }
+        .flip-inner.is-flipped { transform: rotateY(180deg); }
+        .flip-front, .flip-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; top: 0; left: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: white; border-radius: 1rem; }
+        .flip-back { transform: rotateY(180deg); }
+
+        /* 隐私模糊 */
+        .privacy-blur { filter: blur(4px); transition: filter 0.3s; cursor: pointer; }
+        .privacy-blur:hover { filter: blur(0); }
+
+        /* Tab 选中态 */
+        .tab-active { background-color: #eff6ff; color: #3b82f6; border-color: #bfdbfe; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 max-w-[1600px] mx-auto flex flex-col gap-6">
+
+    <!-- 配置与工具加载层 -->
+    <div id="tool-view" class="hidden fixed inset-0 z-50 bg-slate-50 flex flex-col">
+        <div class="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 flex-shrink-0">
+            <h2 id="tool-view-title" class="text-lg font-bold text-slate-800"></h2>
+            <button onclick="closeTool()" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm transition flex items-center gap-2">
+                <i class="fa-solid fa-arrow-left"></i> 返回仪表盘
+            </button>
+        </div>
+        <iframe id="tool-iframe" class="flex-1 w-full border-0 min-h-0" title="功能页面"></iframe>
+    </div>
+
+    <!-- 尺寸输入弹窗 -->
+    <div id="size-modal" class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-6 w-80 shadow-2xl transform transition-all scale-100">
+            <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-ruler-combined text-emerald-500"></i> 更新硬件数据
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase">长度 (cm)</label>
+                    <input type="number" id="input-length" step="0.1" class="w-full mt-1 p-2 border border-slate-200 rounded font-mono text-lg focus:border-emerald-500 outline-none" placeholder="0.0">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase">粗细/周长 (cm)</label>
+                    <input type="number" id="input-girth" step="0.1" class="w-full mt-1 p-2 border border-slate-200 rounded font-mono text-lg focus:border-emerald-500 outline-none" placeholder="0.0">
+                </div>
+                <div class="text-[10px] text-slate-400 leading-tight pt-2">
+                    * 数据仅存储在本地浏览器中，请放心记录。<br>
+                    * 精度支持 0.1cm。
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button onclick="saveSizeData()" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-lg font-bold transition">保存</button>
+                    <button onclick="document.getElementById('size-modal').classList.add('hidden')" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-500 py-2 rounded-lg font-bold transition">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 顶部 Header -->
+    <header class="flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">BIO-HACKING <span class="text-slate-400 font-normal">CONSOLE</span></h1>
+            <p class="text-xs text-slate-400 mt-1 font-mono">SYSTEM V3.0 // DAY <span id="day-counter" class="text-slate-600 font-bold">000</span></p>
+        </div>
+        <!-- [修改] 移除了右上角的 Mock 和 垃圾桶按钮 -->
+    </header>
+
+    <!-- 核心网格布局 -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- 左侧：核心雷达/总分 (4/12) -->
+        <div class="col-span-1 lg:col-span-4 h-[420px] flip-container">
+            <div class="dashboard-card h-full relative" id="score-card">
+                <!-- 切换按钮 -->
+                <button onclick="toggleScoreView()" class="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition border border-slate-200">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+                
+                <div class="flip-inner" id="score-flip-inner">
+                    <!-- 正面：雷达图 -->
+                    <div class="flip-front p-6">
+                        <div class="absolute top-4 left-6 text-xs font-bold text-slate-400 uppercase tracking-widest">Attributes</div>
+                        <div class="w-full h-64 relative flex items-center justify-center">
+                            <canvas id="radarChart"></canvas>
+                        </div>
+                        <!-- 底部三个小指标 -->
+                        <div class="w-full grid grid-cols-3 gap-2 mt-auto pt-4 border-t border-slate-100">
+                            <div class="text-center">
+                                <div class="text-[10px] text-emerald-500 font-bold uppercase">Size</div>
+                                <div id="mini-score-size" class="text-lg font-mono font-bold text-slate-700">--</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-[10px] text-blue-500 font-bold uppercase">Hardness</div>
+                                <div id="mini-score-hard" class="text-lg font-mono font-bold text-slate-700">--</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-[10px] text-orange-500 font-bold uppercase">Time</div>
+                                <div id="mini-score-time" class="text-lg font-mono font-bold text-slate-700">--</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 背面：总分大数字 -->
+                    <div class="flip-back p-8 bg-gradient-to-br from-slate-50 to-white">
+                        <div class="text-sm font-bold text-slate-400 uppercase tracking-[0.2em] mb-4">Total Score</div>
+                        <div id="total-score-display" class="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 tracking-tighter">
+                            0
+                        </div>
+                        <div class="mt-4 px-4 py-1.5 rounded-full bg-blue-50 text-blue-600 text-xs font-bold border border-blue-100">
+                            综合机能评分
+                        </div>
+                        <div class="mt-8 text-xs text-slate-400 max-w-[200px] leading-relaxed">
+                            基于硬度(45%)、时间(35%)与尺寸(20%)的加权算法
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：功能卡片矩阵 (8/12) -->
+        <div class="col-span-1 lg:col-span-8 grid grid-cols-1 md:grid-cols-3 gap-6 h-auto lg:h-[420px]">
+            
+            <!-- 1. 尺寸卡片 (Green) -->
+            <div class="dashboard-card theme-green border-t-4 border-t-[var(--main)] group flex flex-col">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-start">
+                    <div>
+                        <div class="font-bold text-slate-800">Size</div>
+                        <div class="text-[10px] text-slate-400">The Hardware</div>
+                    </div>
+                    <div class="w-8 h-8 rounded bg-[var(--bg)] text-[var(--main)] flex items-center justify-center">
+                        <i class="fa-solid fa-ruler-combined"></i>
+                    </div>
+                </div>
+                <div class="p-6 flex-1 flex flex-col justify-center items-center cursor-pointer hover:bg-slate-50 transition" onclick="document.getElementById('size-modal').classList.remove('hidden')">
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1 uppercase tracking-wide">Rating</div>
+                        <div id="size-score-val" class="text-4xl font-bold text-[var(--main)]">--</div>
+                    </div>
+                    <div class="mt-6 w-full space-y-2">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-slate-400">Length</span>
+                            <span id="disp-length" class="font-mono font-bold text-slate-600 privacy-blur">-- cm</span>
+                        </div>
+                        <div class="flex justify-between text-xs">
+                            <span class="text-slate-400">Girth</span>
+                            <span id="disp-girth" class="font-mono font-bold text-slate-600 privacy-blur">-- cm</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 text-[10px] text-[var(--main)] font-bold opacity-0 group-hover:opacity-100 transition">
+                        点击修改数据
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 硬度卡片 (Blue) -->
+            <div class="dashboard-card theme-blue border-t-4 border-t-[var(--main)] group flex flex-col">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-start">
+                    <div>
+                        <div class="font-bold text-slate-800">Hardness</div>
+                        <div class="text-[10px] text-slate-400">The Engine</div>
+                    </div>
+                    <div class="w-8 h-8 rounded bg-[var(--bg)] text-[var(--main)] flex items-center justify-center">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                </div>
+                <div class="p-0 flex-1 flex flex-col">
+                    <!-- Kegel Section -->
+                    <div class="flex-1 p-4 border-b border-slate-100 cursor-pointer hover:bg-[var(--bg)] transition flex items-center justify-between" onclick="openTool('kegel')">
+                        <div class="flex items-center gap-3">
+                            <i class="fa-solid fa-layer-group text-slate-300"></i>
+                            <div>
+                                <div class="text-xs font-bold text-slate-600">Kegel Trainer</div>
+                                <div class="text-[10px] text-slate-400">PC肌强化</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div id="kegel-count" class="text-lg font-bold text-[var(--main)] font-mono">0</div>
+                            <div class="text-[8px] text-slate-400">TODAY</div>
+                        </div>
+                    </div>
+                    <!-- Body Section -->
+                    <div class="flex-1 p-4 cursor-pointer hover:bg-[var(--bg)] transition flex items-center justify-between" onclick="openTool('body')">
+                        <div class="flex items-center gap-3">
+                            <i class="fa-solid fa-person-running text-slate-300"></i>
+                            <div>
+                                <div class="text-xs font-bold text-slate-600">Body Builder</div>
+                                <div class="text-[10px] text-slate-400">体能重构</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div id="body-checks" class="text-lg font-bold text-[var(--main)] font-mono">0/5</div>
+                            <div class="text-[8px] text-slate-400">CHECKS</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. 时间卡片 (Orange) -->
+            <div class="dashboard-card theme-orange border-t-4 border-t-[var(--main)] group flex flex-col">
+                <div class="p-5 border-b border-slate-100 flex justify-between items-start">
+                    <div>
+                        <div class="font-bold text-slate-800">Time</div>
+                        <div class="text-[10px] text-slate-400">The Control</div>
+                    </div>
+                    <div class="w-8 h-8 rounded bg-[var(--bg)] text-[var(--main)] flex items-center justify-center">
+                        <i class="fa-solid fa-stopwatch"></i>
+                    </div>
+                </div>
+                <!-- [修改] 增加 pb-2 以适应底部按钮 -->
+                <div class="p-6 pb-2 flex-1 flex flex-col justify-center items-center cursor-pointer hover:bg-[var(--bg)] transition relative" onclick="openTool('edge')">
+                    <div class="absolute top-2 right-2 text-[var(--main)] opacity-0 group-hover:opacity-100 transition">
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </div>
+                    
+                    <div class="text-center w-full">
+                        <div class="text-xs text-slate-400 mb-1 uppercase tracking-wide">Last Session</div>
+                        <div id="edge-last-time" class="text-3xl font-bold text-slate-700 font-mono">--:--</div>
+                    </div>
+
+                    <!-- Perf Score 区域 -->
+                    <div class="mt-4 w-full bg-orange-50 rounded-lg p-2 flex justify-between items-center border border-orange-100">
+                        <span class="text-[10px] text-orange-600 font-bold uppercase">Perf. Score</span>
+                        <span id="edge-perf-score" class="text-lg font-bold text-[var(--main)] font-mono">--</span>
+                    </div>
+
+                    <!-- [修改] 休息日标记按钮区域 (阻止冒泡防止触发 Card 点击) -->
+                    <div id="rest-control-area" class="w-full mt-3 h-8 flex items-center justify-center" onclick="event.stopPropagation()">
+                         <!-- JS 将动态插入按钮 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部趋势图 -->
+    <div class="dashboard-card p-6 h-80 w-full relative flex flex-col">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                <i class="fa-solid fa-chart-line text-blue-500"></i> Performance Trend
+            </h3>
+            <!-- Tab 控制器 -->
+            <div class="flex bg-slate-50 p-1 rounded-lg border border-slate-200">
+                <button onclick="switchChart('total')" id="tab-total" class="px-3 py-1 text-xs font-bold rounded-md transition text-slate-500 hover:text-slate-700 tab-active">综合评分</button>
+                <button onclick="switchChart('hardness')" id="tab-hardness" class="px-3 py-1 text-xs font-bold rounded-md transition text-slate-500 hover:text-slate-700">硬度指标</button>
+                <button onclick="switchChart('time')" id="tab-time" class="px-3 py-1 text-xs font-bold rounded-md transition text-slate-500 hover:text-slate-700">持久表现</button>
+            </div>
+        </div>
+        <div class="flex-1 w-full min-h-0 relative">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // --- 系统配置中心 (修改这里可全局生效) ---
+        const SYSTEM_CONFIG = {
+            tools: {
+                edge: { title: 'Edge Control', path: './Edge Control .html' },   // 如果改名，请修改 path
+                kegel: { title: 'Kegel Trainer', path: './Kegel Trainer .html' },
+                body: { title: 'Body Builder', path: './Body Builder .html' }
+            }
+        };
+
+        // --- 全局状态 ---
+        const KEYS = { EDGE: 'edge_history', KEGEL: 'kegel_history', BODY: 'body_builder_data', SIZE: 'user_size_data', REST: 'rest_days' };
+        let db = { edge: [], kegel: [], body: {}, size: { length: 0, girth: 0 }, rest: [] };
+        let scores = { total: 0, size: 0, hardness: 0, time: 0 };
+        let chartInstance = null;
+        let radarInstance = null;
+
+        // --- 核心工具：获取本地日期字符串 (YYYY-MM-DD) ---
+        // 解决跨时区问题，强制使用本地时间而非 UTC
+        function getLocalDayStr(dateObj) {
+            if (!dateObj) dateObj = new Date();
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // --- 初始化 ---
+        window.onload = function() {
+            loadData();
+            calculateAllScores();
+            updateUI();
+            initCharts();
+        };
+
+        // --- 1. 数据加载 ---
+        function loadData() {
+            try {
+                db.edge = JSON.parse(localStorage.getItem(KEYS.EDGE) || '[]');
+                db.kegel = JSON.parse(localStorage.getItem(KEYS.KEGEL) || '[]');
+                db.body = JSON.parse(localStorage.getItem(KEYS.BODY) || '{}');
+                db.size = JSON.parse(localStorage.getItem(KEYS.SIZE) || '{"length": 0, "girth": 0}');
+                db.rest = JSON.parse(localStorage.getItem(KEYS.REST) || '[]'); // [修改] 加载休息日数据
+                
+                // 计算天数
+                const allDates = [
+                    ...db.edge.map(i => new Date(i.date)),
+                    ...db.kegel.map(i => new Date(i.date)),
+                    ...Object.keys(db.body).map(k => new Date(k))
+                ].filter(d => !isNaN(d));
+                
+                if (allDates.length > 0) {
+                    const first = new Date(Math.min(...allDates));
+                    const days = Math.ceil(Math.abs(new Date() - first) / (86400000)) + 1;
+                    document.getElementById('day-counter').innerText = days.toString().padStart(3, '0');
+                }
+            } catch (e) { console.error("Load Error", e); }
+        }
+
+        // --- 核心辅助函数: 获取 Body Builder 每日完成数 ---
+        // 兼容 V3 (Object + state array) 和 旧版数据
+        function getDailyBodyChecks(dateStr) {
+            const raw = db.body[dateStr];
+            if (!raw) return 0;
+            
+            // 场景1: V3 新版数据 { version:..., state: [T,F,T,F,F] }
+            if (raw.state && Array.isArray(raw.state)) {
+                return raw.state.filter(Boolean).length;
+            }
+            // 场景2: 旧版简单数组 [T,T,T,F,F] (防御性编程)
+            if (Array.isArray(raw)) {
+                // 如果是二维数组(V1版 5x5)，取扁平化后的前5个或者特殊处理
+                // 这里假设你已经升级到 V3，为了防止 25/5 错误，我们强制只取一维布尔值
+                const flat = raw.flat();
+                if (flat.length > 5) {
+                    // 如果发现超过5个，可能是旧数据，这里为了不再显示25/5，强制截断或视为无效
+                    // 简单策略：统计 true 的个数，但封顶 5 (防止爆炸)
+                    const count = flat.filter(Boolean).length;
+                    return Math.min(count, 5); 
+                }
+                return flat.filter(Boolean).length;
+            }
+            return 0;
+        }
+
+        // --- 2. 核心算法 (V3.0 Logic) ---
+        
+        // A. 尺寸打分 (Green)
+        function calcSizeScore(len, girth) {
+            if (!len || !girth) return 0;
+            let sLen = 60; 
+            if (len >= 11 && len <= 13) sLen = 100;
+            else if (len > 13) sLen = 100 + (len - 13) * 10 * 0.5;
+            else if (len >= 8) sLen = 60 + (len - 8) * 13;
+
+            let sGirth = 60;
+            if (girth >= 10 && girth <= 11.5) sGirth = 100;
+            else if (girth > 11.5) sGirth = 100 + (girth - 11.5) * 10 * 0.5;
+            else if (girth >= 8) sGirth = 60 + (girth - 8) * 20;
+
+            return Math.min(120, (sGirth * 0.6) + (sLen * 0.4));
+        }
+
+        // B. 硬度打分 (Blue) - 每日动态
+        function calcHardnessScore(dateStr) {
+            // Kegel (60%) - 使用 getLocalDayStr 匹配日期
+            const kCount = db.kegel.filter(k => getLocalDayStr(new Date(k.date)) === dateStr).length;
+            let sKegel = 0;
+            if (kCount >= 3) sKegel = 100;
+            else if (kCount === 2) sKegel = 60;
+            else if (kCount === 1) sKegel = 30;
+            if (kCount >= 4) sKegel = 105;
+
+            // Body (40%) - 使用修正后的辅助函数
+            const bChecks = getDailyBodyChecks(dateStr);
+            let sBody = (bChecks / 5) * 100; 
+
+            return (sKegel * 0.6) + (sBody * 0.4);
+        }
+
+        // C. 时间打分 (Orange) - 倒U型 + 均值
+        function calcTimeScore(targetDateStr) {
+            // 使用 getLocalDayStr 匹配日期
+            const todaySessions = db.edge.filter(e => getLocalDayStr(new Date(e.date)) === targetDateStr);
+            
+            const scoreSession = (s) => {
+                // [修改] 基础分逻辑：只有当实际时长 >= 目标时长时，才给 60 分
+                // 注意：旧数据可能没有 expectedDuration，为了兼容，如果不存在则默认达标(60)，或者默认0？
+                // 根据你的要求"失败了就没有这60分"，我们严格判断。
+                // 如果是新数据，都有 expectedDuration。如果是老数据，可能为 undefined。
+                // 为了严谨：如果 expectedDuration 存在且 duration < expectedDuration，基础分 = 0。
+                // 否则(达标或老数据) = 60。
+                let base = 60;
+                if (s.expectedDuration && s.duration < s.expectedDuration) {
+                    base = 0;
+                }
+
+                const diffMap = { 'L1':0, 'L2':3, 'L3':6, 'L4':10 };
+                let diff = diffMap[s.difficulty] || 0;
+                let ratioVal = parseFloat(s.ratio || 0);
+                let ratioScore = ratioVal >= 80 ? 10 : (ratioVal >= 60 ? 5 : 0);
+                let edge = s.edgeCount || 0;
+                let edgeScore = 0;
+                if (edge === 0) edgeScore = 0;
+                else if (edge <= 2) edgeScore = 10;
+                else if (edge <= 4) edgeScore = 20; 
+                else if (edge <= 6) edgeScore = 10;
+                else edgeScore = 5; 
+
+                return Math.min(100, base + diff + ratioScore + edgeScore);
+            };
+
+            if (todaySessions.length > 0) {
+                const scores = todaySessions.map(scoreSession);
+                return { val: Math.max(...scores), isRest: false, hasData: true, raw: todaySessions[todaySessions.length-1] }; 
+            } else {
+                // 今日无数据
+                // [修改] 检查是否标记了休息
+                const isRestMarked = db.rest.includes(targetDateStr);
+
+                if (isRestMarked) {
+                    // 如果标记了休息，计算前3天平均分
+                    const pastSessions = db.edge.filter(e => getLocalDayStr(new Date(e.date)) !== targetDateStr);
+                    pastSessions.sort((a,b) => new Date(b.date) - new Date(a.date));
+                    const recent3 = pastSessions.slice(0, 3);
+                    
+                    if (recent3.length === 0) return { val: 0, isRest: true, hasData: false, raw: null };
+
+                    const avg = recent3.reduce((acc, cur) => acc + scoreSession(cur), 0) / recent3.length;
+                    return { val: avg, isRest: true, hasData: false, raw: null }; 
+                } else {
+                    // [修改] 没数据也没标记休息，分数为 0
+                    return { val: 0, isRest: false, hasData: false, raw: null };
+                }
+            }
+        }
+
+        function calculateAllScores() {
+            const todayStr = getLocalDayStr(new Date());
+
+            scores.size = calcSizeScore(db.size.length, db.size.girth);
+            scores.hardness = calcHardnessScore(todayStr);
+            const timeObj = calcTimeScore(todayStr);
+            scores.time = timeObj.val;
+
+            scores.total = (scores.hardness * 0.45) + (scores.time * 0.35) + (scores.size * 0.20);
+            scores.timeMeta = timeObj;
+        }
+
+        // --- 3. UI 更新 ---
+        function updateUI() {
+            document.getElementById('total-score-display').innerText = Math.round(scores.total);
+            document.getElementById('mini-score-size').innerText = Math.round(scores.size);
+            document.getElementById('mini-score-hard').innerText = Math.round(scores.hardness);
+            document.getElementById('mini-score-time').innerText = Math.round(scores.time);
+
+            document.getElementById('size-score-val').innerText = Math.round(scores.size);
+            document.getElementById('disp-length').innerText = db.size.length ? db.size.length + " cm" : "--";
+            document.getElementById('disp-girth').innerText = db.size.girth ? db.size.girth + " cm" : "--";
+            document.getElementById('input-length').value = db.size.length || "";
+            document.getElementById('input-girth').value = db.size.girth || "";
+
+            const todayStr = getLocalDayStr(new Date());
+            const kCount = db.kegel.filter(k => getLocalDayStr(new Date(k.date)) === todayStr).length;
+            const bChecks = getDailyBodyChecks(todayStr); 
+            document.getElementById('kegel-count').innerText = kCount;
+            document.getElementById('body-checks').innerText = bChecks + "/5";
+
+            // [修改] Time 卡片 UI 逻辑
+            const tm = scores.timeMeta;
+            document.getElementById('edge-perf-score').innerText = Math.round(tm.val);
+            const edgeTimeEl = document.getElementById('edge-last-time');
+            const restCtrlArea = document.getElementById('rest-control-area');
+            
+            if (tm.hasData && tm.raw) {
+                // 有训练数据：正常显示
+                const m = Math.floor(tm.raw.duration / 60);
+                const s = (tm.raw.duration % 60).toString().padStart(2, '0');
+                edgeTimeEl.innerText = `${m}:${s}`;
+                edgeTimeEl.classList.remove('text-slate-300'); 
+                edgeTimeEl.classList.add('text-slate-700');    
+                restCtrlArea.innerHTML = ''; // 既然练了就不用显示休息按钮了
+            } else {
+                // 无数据：显示 --:--
+                edgeTimeEl.innerText = "--:--";
+                edgeTimeEl.classList.remove('text-slate-700'); 
+                edgeTimeEl.classList.add('text-slate-300');    
+                
+                // 显示休息控制按钮
+                if (tm.isRest) {
+                    restCtrlArea.innerHTML = `
+                        <button onclick="toggleRestDay('${todayStr}')" class="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs font-bold rounded-full transition flex items-center gap-1">
+                            <i class="fa-solid fa-mug-hot"></i> 取消休息
+                        </button>
+                    `;
+                    // 如果休息，显示提示
+                    document.getElementById('edge-perf-score').innerText = Math.round(tm.val) + " (Avg)";
+                } else {
+                    restCtrlArea.innerHTML = `
+                        <button onclick="toggleRestDay('${todayStr}')" class="px-3 py-1 border border-slate-200 hover:bg-slate-50 text-slate-400 text-xs font-bold rounded-full transition flex items-center gap-1">
+                            <i class="fa-regular fa-calendar"></i> 标记休息
+                        </button>
+                    `;
+                }
+            }
+        }
+        
+        // [新增] 切换休息日状态
+        window.toggleRestDay = function(dateStr) {
+            // 防止冒泡 (虽然HTML里onclick已经加了stopPropagation，双保险)
+            if (event) event.stopPropagation();
+            
+            const idx = db.rest.indexOf(dateStr);
+            if (idx > -1) {
+                db.rest.splice(idx, 1); // 取消
+            } else {
+                db.rest.push(dateStr); // 标记
+            }
+            localStorage.setItem(KEYS.REST, JSON.stringify(db.rest));
+            
+            // 重新计算并刷新
+            calculateAllScores();
+            updateUI();
+            
+            // 刷新雷达
+            if (radarInstance) {
+                radarInstance.data.datasets[0].data = [scores.size, scores.hardness, scores.time];
+                radarInstance.update();
+            }
+            // 刷新图表
+            switchChart(document.querySelector('.tab-active').id.replace('tab-',''));
+        }
+
+        // --- 4. 图表逻辑 ---
+        
+        function initCharts() {
+            const ctxR = document.getElementById('radarChart').getContext('2d');
+            radarInstance = new Chart(ctxR, {
+                type: 'radar',
+                data: {
+                    labels: ['Size (20%)', 'Hardness (45%)', 'Time (35%)'],
+                    datasets: [{
+                        data: [scores.size, scores.hardness, scores.time],
+                        backgroundColor: 'rgba(99, 102, 241, 0.2)',
+                        borderColor: '#6366f1', borderWidth: 2,
+                        pointBackgroundColor: ['#10b981', '#3b82f6', '#f97316'],
+                        pointBorderColor: '#fff', pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { r: { min: 0, max: 120, ticks: { display: false }, grid: { color: '#f1f5f9' } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            switchChart('total'); 
+        }
+
+        function switchChart(type) {
+            ['total', 'hardness', 'time'].forEach(t => {
+                const btn = document.getElementById('tab-' + t);
+                if (t === type) btn.classList.add('tab-active');
+                else btn.classList.remove('tab-active');
+            });
+
+            // 生成过去7天数组 (使用本地时间)
+            const days = [];
+            const today = new Date();
+            for(let i=6; i>=0; i--) {
+                const d = new Date(today); // 复制当前时间
+                d.setDate(today.getDate() - i);
+                days.push(getLocalDayStr(d));
+            }
+            
+            let finalData = { labels: days.map(s => s.slice(5)), datasets: [] };
+            let legendDisplay = false; 
+
+            if (type === 'total') {
+                const data = days.map(dStr => {
+                    const h = calcHardnessScore(dStr);
+                    const t = calcTimeScore(dStr).val;
+                    return (h * 0.45) + (t * 0.35) + (scores.size * 0.2);
+                });
+                finalData.datasets.push({
+                    label: 'Total Score',
+                    data: data,
+                    borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                    fill: true, tension: 0.4, borderWidth: 2
+                });
+            } else if (type === 'hardness') {
+                legendDisplay = true; 
+                const kegelData = days.map(dStr => db.kegel.filter(k => getLocalDayStr(new Date(k.date)) === dStr).length);
+                const bodyData = days.map(dStr => getDailyBodyChecks(dStr)); 
+                
+                finalData.datasets.push({
+                    type: 'bar', label: 'Kegel Count', data: kegelData,
+                    backgroundColor: '#3b82f6', borderRadius: 4, 
+                    barThickness: 12, 
+                    order: 2, 
+                    yAxisID: 'y'
+                });
+                finalData.datasets.push({
+                    type: 'line', label: 'Body Checks', data: bodyData,
+                    borderColor: '#10b981', borderWidth: 2, tension: 0.4, 
+                    order: 1, 
+                    yAxisID: 'y1'
+                });
+            } else if (type === 'time') {
+                const timeData = days.map(dStr => {
+                    const sess = db.edge.filter(e => getLocalDayStr(new Date(e.date)) === dStr);
+                    if(sess.length) return Math.round(sess.reduce((a,c)=>a+c.duration,0)/60); 
+                    return 0;
+                });
+                finalData.datasets.push({
+                    label: 'Duration (min)', data: timeData,
+                    borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                    fill: true, tension: 0.4, borderWidth: 2
+                });
+            }
+
+            const ctxT = document.getElementById('trendChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctxT, {
+                type: 'line',
+                data: finalData,
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                        y: { beginAtZero: true, display: type !== 'hardness' },
+                        y1: { display: type === 'hardness', position: 'right', beginAtZero: true, grid: { display: false } }
+                    },
+                    plugins: { 
+                        legend: { 
+                            display: legendDisplay, 
+                            position: 'top', align: 'end', labels: { boxWidth: 10 } 
+                        } 
+                    }
+                }
+            });
+        }
+
+        // --- 交互功能 ---
+        function toggleScoreView() {
+            const inner = document.getElementById('score-flip-inner');
+            inner.classList.toggle('is-flipped');
+        }
+
+        function saveSizeData() {
+            const l = parseFloat(document.getElementById('input-length').value);
+            const g = parseFloat(document.getElementById('input-girth').value);
+            if (isNaN(l) || isNaN(g)) return alert("请输入有效数字");
+            
+            db.size = { length: l, girth: g };
+            localStorage.setItem(KEYS.SIZE, JSON.stringify(db.size));
+            document.getElementById('size-modal').classList.add('hidden');
+            
+            calculateAllScores();
+            updateUI();
+            
+            radarInstance.data.datasets[0].data = [scores.size, scores.hardness, scores.time];
+            radarInstance.update();
+            switchChart(document.querySelector('.tab-active').id.replace('tab-','')); 
+        }
+
+        function openTool(key) {
+            const tool = SYSTEM_CONFIG.tools[key];
+            if (!tool) return;
+            const view = document.getElementById('tool-view');
+            document.getElementById('tool-view-title').innerText = tool.title;
+            document.getElementById('tool-iframe').src = tool.path;
+            view.classList.remove('hidden');
+            view.classList.add('flex');
+        }
+        function closeTool() {
+            const view = document.getElementById('tool-view');
+            view.classList.add('hidden');
+            view.classList.remove('flex');
+            document.getElementById('tool-iframe').src = 'about:blank';
+            loadData();
+            calculateAllScores();
+            updateUI();
+            radarInstance.data.datasets[0].data = [scores.size, scores.hardness, scores.time];
+            radarInstance.update();
+            // 重新刷新一下图表以确保数据最新
+            switchChart(document.querySelector('.tab-active').id.replace('tab-',''));
+        }
+    </script>
+</body>
+</html>

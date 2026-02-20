@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Eros - 进阶地图 (独立版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // [保持原样] 严格保留 demo.html 的配置
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        eros: {
+                            dark: '#f1f5f9',   // 浅色主背景
+                            panel: '#ffffff',  // 浅色面板/侧边栏
+                            accent: '#059669', // Emerald 600 更沉稳的绿
+                            muted: '#64748b',
+                            text: '#334155',
+                            locked: '#94a3b8'
+                        }
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'fade-in': 'fadeIn 0.5s ease-out forwards',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        }
+                    },
+                    transitionProperty: {
+                        'height': 'height',
+                        'spacing': 'margin, padding',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* [保持原样] 严格保留 demo.html 的所有 CSS 覆盖 */
+        body { background-color: #f1f5f9; color: #334155; font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .backdrop-blur-sm { backdrop-filter: blur(4px); }
+        .fade-transition { transition: opacity 0.3s ease-in-out; }
+        
+        /* 浅色主题（默认）：文字与边框强制覆盖 */
+        body .text-white { color: #0f172a !important; }
+        body .text-slate-100 { color: #1e293b !important; }
+        body .text-slate-200 { color: #334155 !important; }
+        body .text-slate-300 { color: #475569 !important; }
+        body .text-slate-400 { color: #64748b !important; }
+        body .text-slate-500 { color: #64748b !important; }
+        body .text-slate-600 { color: #64748b !important; }
+        body .border-slate-700 { border-color: #e2e8f0 !important; }
+        body .border-slate-600 { border-color: #e2e8f0 !important; }
+        body .bg-slate-700 { background-color: #e2e8f0 !important; }
+        body .bg-slate-800 { background-color: #f1f5f9 !important; }
+        body .bg-slate-900 { background-color: #f8fafc !important; }
+        body .bg-slate-800\/50 { background-color: rgba(241, 245, 249, 0.9) !important; }
+        body .bg-slate-700\/50 { background-color: rgba(226, 232, 240, 0.8) !important; }
+        body .bg-slate-700\/30 { background-color: rgba(226, 232, 240, 0.6) !important; }
+        body .hover\:bg-slate-700:hover { background-color: #e2e8f0 !important; }
+        body .hover\:text-white:hover { color: #0f172a !important; }
+        body .hover\:bg-slate-700\/30:hover { background-color: rgba(203, 213, 225, 0.6) !important; }
+        
+        /* 模态框样式覆盖 */
+        body #modal-content { background-color: #ffffff !important; border-color: #e2e8f0 !important; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.12); }
+        body #modal-content .text-slate-300 { color: #475569 !important; }
+        body #modal-content .text-slate-100 { color: #1e293b !important; }
+        body #modal-content .bg-slate-800 { background-color: #f8fafc !important; }
+        body #modal-content .bg-slate-800\/50 { background-color: #f1f5f9 !important; }
+        body #modal-content .border-slate-700 { border-color: #e2e8f0 !important; }
+        body #modal-content .border-slate-500 { border-color: #e2e8f0 !important; }
+        
+        body .border-slate-600\/50 { border-color: #e2e8f0 !important; }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden selection:bg-emerald-500 selection:text-white bg-eros-dark">
+
+    <!-- 主容器：直接显示地图 -->
+    <div id="app-root" class="h-full w-full relative overflow-y-auto scrollbar-hide">
+        <!-- 内容将由 JS 渲染在此处 -->
+    </div>
+
+    <!-- 模态框 (保持原样) -->
+    <div id="modal-overlay" onclick="closeModal(event)" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 transition-opacity duration-300">
+        <div id="modal-content" class="bg-eros-panel border border-slate-600 rounded-xl p-6 w-full max-w-2xl shadow-2xl transform scale-95 transition-transform duration-300 max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div class="flex justify-between items-start mb-4 border-b border-slate-700 pb-2">
+                <h3 id="modal-title" class="text-2xl font-bold text-white tracking-wide"></h3>
+                <button onclick="toggleModal(false)" class="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            <div id="modal-body" class="text-slate-300 mb-6 leading-relaxed space-y-6"></div>
+            <div class="flex justify-end space-x-3 hidden">
+                <button onclick="toggleModal(false)" class="px-4 py-2 rounded text-slate-400 hover:bg-slate-700/50 transition">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 核心数据结构 (保持原样) ---
+        const DB_KEY = 'eros_v5_fixed_data'; 
+        
+        // 5点4段模型数据
+        const STAGES = [
+            { 
+                id: 1, 
+                name: "路人", 
+                en_name: "STRANGER",
+                definition: "物理空间有交集，但心理空间陌生。目标是打破空气墙，建立连接。",
+                actions: [
+                    "形象建设：面部清洁，拒绝圆肩驼背，Clean Fit穿搭。",
+                    "声明式开场：表明来意，减少不安全感。",
+                    "数字着陆：获取联系方式后主动切断，制造安全感。"
+                ],
+                taboos: [
+                    "忌死缠烂打：超过3次不回消息停止骚扰。",
+                    "忌查户口：刚认识不要连续提问。"
+                ],
+                tasks: [
+                    "获取微信/联系方式，未被拒绝",
+                    "获得“废话回复”（非功能性互动）",
+                    "朋友圈互动权（点赞/评论/未屏蔽）"
+                ]
+            },
+            { 
+                id: 2, 
+                name: "朋友", 
+                en_name: "FRIEND",
+                definition: "列表里的熟人，由于任务完成，你们现在已经可以正常交流。",
+                actions: [
+                    "高价值展示：朋友圈作为简历展示生活。",
+                    "话题深潜：挖掘共同点，分享非功能性自我。",
+                    "模糊邀约：以“事”为主（探店）进行低压邀约。"
+                ],
+                taboos: [
+                    "忌做情绪垃圾桶：只听吐槽不见面即为白嫖。",
+                    "忌供养者框架：不试图通过送礼讨好。"
+                ],
+                tasks: [
+                    "成功进行 1 次单独邀约（1V1）",
+                    "对方主动发起过话题分享",
+                    "完成 1 次情绪暴露（她向你吐槽）"
+                ]
+            },
+            { 
+                id: 3, 
+                name: "好朋友", 
+                en_name: "GOOD FRIEND",
+                definition: "关系质变期。如果不推进，就会永久停留在朋友圈。",
+                actions: [
+                    "进挪（Kino）：遵循“进两步退一步”原则。",
+                    "推拉话术：先打压再赞美，制造情绪波动。",
+                    "气场控制：三角凝视暗示亲吻。"
+                ],
+                taboos: [
+                    "忌收到好人卡崩溃：若躲避则装作无事发生。",
+                    "忌不敢升级：没有肢体接触永远是朋友。"
+                ],
+                tasks: [
+                    "肢体接触测试通过（不躲避/不僵硬）",
+                    "默认“准情侣”待遇（共用吸管/暧昧昵称）",
+                    "进行过高强度深夜聊天"
+                ]
+            },
+            { 
+                id: 4, 
+                name: "暧昧对象", 
+                en_name: "AMBIGUOUS",
+                definition: "窗户纸薄如蝉翼，只差最后一步确认。",
+                actions: [
+                    "私密空间构建：转场至影院/租房/清吧。",
+                    "窗户纸粉碎：牵手、拥抱或语言表白。",
+                    "安全防护：随身携带安全用品，尊重底线。"
+                ],
+                taboos: [
+                    "忌接受养鱼：享受暧昧但拒绝关系，立即切断。",
+                    "忌强行推进：No means No。"
+                ],
+                tasks: [
+                    "仪式感确认（口头达成男女朋友共识）",
+                    "实质性亲密行为（接吻/French Kiss）",
+                    "（可选）完成最终身心结合"
+                ]
+            },
+            { 
+                id: 5, 
+                name: "恋人", 
+                en_name: "LOVER",
+                definition: "终极目标达成。建立排他性契约关系，开启长期关系维护。",
+                actions: [
+                    "关系公开：在社交圈或朋友圈确认身份。",
+                    "长期规划：讨论未来的可能性。",
+                    "磨合包容：尊重差异，求同存异。"
+                ],
+                taboos: [
+                    "忌得到后立刻松懈形象管理。",
+                    "忌过度控制或猜忌。"
+                ],
+                tasks: []
+            }
+        ];
+
+        // 默认 Schema
+        const defaultSchema = {
+            user: { username: "Guest", password: "", is_activated: true, join_date: "" },
+            settings: { theme: "light", sound_enabled: true },
+            campaign: { 
+                current_stage: 1, 
+                stage_progress: 0, 
+                target_name: "", 
+                history: [],
+                completed_tasks: {} 
+            },
+            daily_logs: {} 
+        };
+
+        // --- 运行时状态 ---
+        let runtimeData = null;
+        const appRoot = document.getElementById('app-root');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalContent = document.getElementById('modal-content');
+
+        // --- 初始化逻辑 ---
+        function init() {
+            const data = localStorage.getItem(DB_KEY);
+            if (!data) {
+                runtimeData = JSON.parse(JSON.stringify(defaultSchema));
+                runtimeData.user.join_date = new Date().toISOString();
+                saveToDB(runtimeData);
+            } else {
+                try {
+                    runtimeData = JSON.parse(data);
+                    if (!runtimeData.campaign.completed_tasks) {
+                        runtimeData.campaign.completed_tasks = {};
+                    }
+                } catch (e) {
+                    console.error("存档损坏，重置中...", e);
+                    runtimeData = JSON.parse(JSON.stringify(defaultSchema));
+                    saveToDB(runtimeData);
+                }
+            }
+            appRoot.innerHTML = renderMapContent();
+        }
+
+        function saveToDB(data) {
+            localStorage.setItem(DB_KEY, JSON.stringify(data));
+            runtimeData = data; 
+        }
+
+        // [新增逻辑] 重新计算当前所处阶段
+        // 规则：从第1阶段开始，必须完成该阶段所有任务才能进入下一阶段。
+        // 一旦遇到未全完成的阶段，进度就停在该阶段。
+        function recalculateCurrentStage() {
+            let newStage = 1;
+            for (let i = 0; i < STAGES.length - 1; i++) {
+                const stage = STAGES[i];
+                const completedTasks = runtimeData.campaign.completed_tasks[stage.id] || [];
+                // 如果该阶段有任务，且任务全部完成，才有资格晋级
+                if (stage.tasks.length > 0 && completedTasks.length === stage.tasks.length) {
+                    newStage = stage.id + 1;
+                } else {
+                    // 只要有一个阶段没完成，进度就卡在这里，后面的都不算
+                    break;
+                }
+            }
+            return newStage;
+        }
+
+        // [修改逻辑] 任务点击
+        function toggleTask(stageId, taskIndex) {
+            // 只有当前阶段或之前的阶段可以操作（未来的阶段还是锁住）
+            // 这里的 currentStage 可能是通过“偷跑”上去的，所以主要防的是未解锁的
+            if (stageId > runtimeData.campaign.current_stage) return;
+
+            if (!runtimeData.campaign.completed_tasks[stageId]) {
+                runtimeData.campaign.completed_tasks[stageId] = [];
+            }
+            const tasksArr = runtimeData.campaign.completed_tasks[stageId];
+            const idxInArr = tasksArr.indexOf(taskIndex);
+            
+            // 切换勾选状态
+            if (idxInArr === -1) {
+                tasksArr.push(taskIndex);
+            } else {
+                tasksArr.splice(idxInArr, 1);
+            }
+            
+            // 核心修改：状态变更后，立即重新计算全局进度
+            const oldStage = runtimeData.campaign.current_stage;
+            const newStage = recalculateCurrentStage();
+            runtimeData.campaign.current_stage = newStage;
+
+            saveToDB(runtimeData);
+            
+            // 刷新 UI
+            // 如果阶段变了（无论是升级还是降级），都需要刷新背后的地图
+            if (oldStage !== newStage) {
+                appRoot.innerHTML = renderMapContent();
+                // 如果是升级，给个提示
+                if (newStage > oldStage) {
+                     // 稍微延迟一点，体验更好
+                     setTimeout(() => {
+                         alert(`恭喜！阶段 ${newStage-1} 任务全部完成。\n已解锁阶段 ${newStage} (${STAGES[newStage-1].name})。`);
+                     }, 100);
+                }
+            }
+            
+            // 重新渲染当前模态框（更新勾选状态，或者如果在当前模态框里降级了，样式要变回未完成）
+            openModal(stageId); 
+        }
+
+        // [原 checkStageCompletion 已被废弃，逻辑合并入 toggleTask 和 recalculateCurrentStage]
+
+        // --- 视图渲染：进阶地图 ---
+        function renderMapContent() {
+            const currentStage = runtimeData.campaign.current_stage;
+            const totalStages = STAGES.length;
+            
+            const progressPercent = Math.max(0, ((currentStage - 1) / (totalStages - 1)) * 100);
+            const lineStyle = `background: linear-gradient(to bottom, #10b981 0%, #10b981 ${progressPercent}%, #cbd5e1 ${progressPercent}%, #cbd5e1 100%);`;
+
+            let nodesHtml = STAGES.map((stage) => {
+                const isCurrent = stage.id === currentStage;
+                const isPast = stage.id < currentStage;
+                const isFinal = stage.id === 5; 
+
+                let nodeStyle = "";
+                let statusIcon = "";
+                let labelColor = "";
+                let hoverEffect = ""; 
+
+                if (isCurrent) {
+                    nodeStyle = "bg-emerald-500 text-white ring-4 ring-emerald-100 shadow-xl shadow-emerald-500/20 z-20 scale-110 animate-pulse-slow";
+                    statusIcon = `<span class="text-xs font-bold tracking-widest">NOW</span>`;
+                    labelColor = "text-emerald-600 font-bold";
+                    hoverEffect = "group-hover:text-emerald-700"; 
+                } else if (isPast) {
+                    nodeStyle = "bg-white border-[3px] border-emerald-500 text-emerald-500 z-10 shadow-sm";
+                    statusIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>`;
+                    labelColor = "text-emerald-600/70";
+                    hoverEffect = "group-hover:text-emerald-600"; 
+                } else {
+                    nodeStyle = "bg-slate-50 border-2 border-slate-200 text-slate-300 z-10";
+                    if (isFinal) {
+                        statusIcon = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>`;
+                    } else {
+                        statusIcon = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>`;
+                    }
+                    labelColor = "text-slate-400";
+                    hoverEffect = "group-hover:text-slate-600"; 
+                }
+                
+                const clickAction = `onclick="openModal(${stage.id})"`;
+                const isLeft = stage.id % 2 !== 0;
+                
+                return `
+                    <div class="grid grid-cols-2 w-full max-w-2xl mx-auto relative group h-48 items-center" ${clickAction}>
+                        <div class="flex ${isLeft ? 'justify-end pr-10 text-right' : 'col-start-2 justify-start pl-10 text-left'} items-center relative cursor-pointer">
+                            <div class="${isLeft ? 'order-1 mr-5' : 'order-2 ml-5'} flex-1 min-w-0 transition-transform duration-300 group-hover:scale-105">
+                                <h4 class="text-xl ${labelColor} transition-colors ${hoverEffect} tracking-wide font-bold uppercase">${stage.name}</h4>
+                                <span class="text-[10px] text-slate-400 font-mono uppercase tracking-widest group-hover:text-emerald-500 transition-colors block mt-1">${stage.en_name}</span>
+                            </div>
+                            <div class="w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 ${nodeStyle} shrink-0 ${isLeft ? 'order-2' : 'order-1'} relative">
+                                ${statusIcon}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="py-8 min-h-full flex flex-col items-center animate-fade-in relative w-full">
+                    <div class="absolute left-1/2 top-24 bottom-24 w-1 -translate-x-1/2 z-0 rounded-full" style="${lineStyle}"></div>
+                    <div class="w-full relative z-10">
+                        ${nodesHtml}
+                    </div>
+                    <div class="py-8 text-center opacity-40">
+                        <p class="text-slate-400 text-[10px] tracking-[0.3em] uppercase">Project Eros // Campaign Map</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- 模态框逻辑 ---
+        window.openModal = function(stageId) {
+            const stage = STAGES.find(s => s.id === stageId);
+            if (!stage) return;
+            
+            document.getElementById('modal-title').innerText = `${stage.name} (${stage.en_name})`;
+            const modalBody = document.getElementById('modal-body');
+
+            const currentStage = runtimeData.campaign.current_stage;
+            const isUnlocked = stageId <= currentStage; // 只要解锁了就可以看/改
+            const completedIndices = runtimeData.campaign.completed_tasks[stageId] || [];
+
+            let htmlContent = `
+                <div class="bg-slate-50 p-4 rounded-lg border border-slate-100 mb-6">
+                    <p class="text-sm text-slate-600 leading-relaxed italic">"${stage.definition}"</p>
+                </div>`;
+
+            if (isUnlocked) {
+                if (stage.actions) {
+                    htmlContent += `
+                        <div class="mb-5">
+                            <h4 class="text-xs font-bold text-emerald-600 mb-2 uppercase tracking-wider flex items-center">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2"></span>关键行动 (DOs)
+                            </h4>
+                            <ul class="space-y-2">${stage.actions.map(a => `<li class="text-sm text-slate-600 pl-4 border-l border-emerald-200">${a}</li>`).join('')}</ul>
+                        </div>`;
+                }
+                if (stage.taboos) {
+                    htmlContent += `
+                        <div class="mb-5">
+                            <h4 class="text-xs font-bold text-amber-600 mb-2 uppercase tracking-wider flex items-center">
+                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 mr-2"></span>禁忌行为 (DON'Ts)
+                            </h4>
+                            <ul class="space-y-2">${stage.taboos.map(t => `<li class="text-sm text-slate-600 pl-4 border-l border-amber-200">${t}</li>`).join('')}</ul>
+                        </div>`;
+                }
+                
+                if (stage.tasks && stage.tasks.length > 0) {
+                    htmlContent += `
+                        <div class="pt-5 border-t border-slate-100">
+                            <h4 class="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">晋升任务 (Self-Check)</h4>
+                            <div class="space-y-2">`;
+                    
+                    stage.tasks.forEach((taskText, index) => {
+                        // [修改逻辑] 严格判定是否勾选，不再因为阶段过去就强制勾选
+                        const isChecked = completedIndices.includes(index);
+                        
+                        // [修改逻辑] 只要是解锁的阶段（<= currentStage），都可以操作
+                        // 只有未来的阶段（> currentStage）才是 disabled
+                        const isDisabled = stageId > currentStage; 
+                        
+                        let divClass = "flex items-start p-3 rounded-lg border transition-all duration-200 ";
+                        let iconClass = "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 mr-3 ";
+                        let textClass = "text-sm transition-colors ";
+
+                        if (isChecked) {
+                            // [修改样式] 虽然是 completed，但为了表明可交互（可取消），加上 cursor-pointer
+                            divClass += "bg-emerald-50 border-emerald-200 cursor-pointer hover:bg-emerald-100";
+                            iconClass += "bg-emerald-500 border-emerald-500 text-white";
+                            textClass += "text-emerald-800 line-through decoration-emerald-500/30";
+                        } else if (isDisabled) {
+                            divClass += "bg-slate-50 border-slate-100 cursor-not-allowed opacity-50";
+                            iconClass += "border-slate-300 bg-transparent";
+                            textClass += "text-slate-400";
+                        } else {
+                            divClass += "bg-white border-slate-300 cursor-pointer hover:border-emerald-400 hover:shadow-sm";
+                            iconClass += "border-slate-400 bg-white group-hover:border-emerald-500";
+                            textClass += "text-slate-600";
+                        }
+
+                        htmlContent += `
+                            <div class="${divClass}" ${!isDisabled ? `onclick="toggleTask(${stageId}, ${index})"` : ''}>
+                                <div class="${iconClass}">
+                                    ${isChecked ? '<svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>' : ''}
+                                </div>
+                                <span class="${textClass}">${taskText}</span>
+                            </div>`;
+                    });
+                    htmlContent += `</div></div>`;
+                } else if (stage.id === 5) {
+                    htmlContent += `
+                        <div class="pt-5 border-t border-slate-100 text-center">
+                            <p class="text-emerald-600 font-bold text-sm">🎉 恭喜达成最终目标</p>
+                        </div>
+                    `;
+                }
+            } else {
+                htmlContent += `
+                    <div class="py-8 text-center border-t border-slate-100 mt-4">
+                        <div class="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-300">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        </div>
+                        <p class="text-xs text-slate-400">请先解锁前置身份</p>
+                    </div>`;
+            }
+
+            modalBody.innerHTML = htmlContent;
+            
+            const actionBtn = document.querySelector('#modal-content button.bg-eros-accent');
+            if (actionBtn) {
+                actionBtn.style.display = 'none';
+            }
+
+            modalOverlay.classList.remove('hidden');
+            setTimeout(() => { modalOverlay.classList.remove('opacity-0'); modalContent.classList.remove('scale-95'); modalContent.classList.add('scale-100'); }, 10);
+        }
+        
+        window.toggleModal = function(show) {
+            if (!show) {
+                modalOverlay.classList.add('opacity-0'); modalContent.classList.remove('scale-100'); modalContent.classList.add('scale-95');
+                setTimeout(() => modalOverlay.classList.add('hidden'), 300);
+            }
+        }
+        window.closeModal = function(e) { if (e.target === modalOverlay) toggleModal(false); }
+        
+        window.onload = init;
+    </script>
+</body>
+</html>
