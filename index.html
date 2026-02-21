@@ -9,15 +9,14 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <script>
-        // 保持 demo 1.html 的配置
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
                         eros: {
-                            dark: '#f1f5f9',   // 浅色主背景
-                            panel: '#ffffff',  // 浅色面板/侧边栏
-                            accent: '#059669', // Emerald 600
+                            dark: '#f1f5f9',   
+                            panel: '#ffffff',  
+                            accent: '#059669', 
                             muted: '#64748b',
                             text: '#334155',
                             locked: '#94a3b8'
@@ -45,7 +44,8 @@
         body { background-color: #f1f5f9; color: #334155; font-family: 'Inter', sans-serif; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-        .sidebar-transition { transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        /* [修改] 增加 transform 的过渡，用于移动端的抽屉滑出效果 */
+        .sidebar-transition { transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
         .submenu-transition { transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out; }
         #sidebar nav button.nav-selected::before { content: ''; position: absolute; left: 0; top: 0.5rem; bottom: 0.5rem; width: 4px; background: #059669; border-radius: 0 4px 4px 0; }
         
@@ -55,7 +55,8 @@
         }
     </style>
 </head>
-<body class="h-screen w-screen overflow-hidden bg-[#f1f5f9]">
+<!-- [修改] h-screen 替换为 h-[100dvh] 以适配移动端浏览器动态地址栏 -->
+<body class="h-[100dvh] w-screen overflow-hidden bg-[#f1f5f9]">
 
     <!-- 全局加载遮罩 -->
     <div id="global-loader" class="fixed inset-0 z-[100] bg-[#f1f5f9] flex items-center justify-center transition-opacity duration-500">
@@ -101,10 +102,11 @@
         let currentSubTab = ''; 
         let isSidebarExpanded = true;
         let isCoreMenuExpanded = false; 
+        let isMobileMenuOpen = false; // [新增] 移动端抽屉菜单状态
         let runtimeData = null;
 
         // ==========================================
-        // 云端数据同步管理器 (SyncManager)
+        // 云端数据同步管理器 (SyncManager) - 保持原样
         // ==========================================
         const SYNC_KEYS = [
             'eros_v5_fixed_data', 'edge_history', 'kegel_history',
@@ -114,7 +116,6 @@
 
         const SyncManager = {
             syncing: false,
-            
             packLocalData: function() {
                 const payload = {};
                 SYNC_KEYS.forEach(key => {
@@ -125,7 +126,6 @@
                 });
                 return payload;
             },
-
             unpackCloudData: function(payload) {
                 if (!payload) return;
                 SYNC_KEYS.forEach(key => {
@@ -134,7 +134,6 @@
                     }
                 });
             },
-
             pullFromCloud: async function() {
                 if (!currentUser || !supabaseClient) return;
                 try {
@@ -145,7 +144,6 @@
                         .single();
                         
                     if (error && error.code !== 'PGRST116') throw error; 
-                    
                     if (data && data.payload) {
                         this.unpackCloudData(data.payload);
                         console.log("✅ 从云端同步数据成功");
@@ -156,7 +154,6 @@
                     console.error("❌ 拉取云端数据失败:", err);
                 }
             },
-
             pushToCloud: async function() {
                 if (!currentUser || !supabaseClient || this.syncing) return;
                 this.syncing = true;
@@ -200,16 +197,11 @@
             try {
                 if (window.supabase) {
                     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                    console.log("✅ Supabase Ready");
-                    
                     const { data: { session } } = await supabaseClient.auth.getSession();
-                    
                     if (session) {
-                        console.log("已登录");
                         currentUser = session.user;
                         await enterMainSystem(); 
                     } else {
-                        console.log("未登录");
                         renderWelcome(); 
                     }
                 } else {
@@ -279,9 +271,6 @@
             `;
         }
 
-        // ==========================================
-        // [改动点] 增强版登录鉴权与激活码校验
-        // ==========================================
         async function handleLoginAction() {
             const nickname = document.getElementById('input-name').value.trim();
             const password = document.getElementById('input-key').value.trim();
@@ -294,49 +283,29 @@
             const originalText = btn.innerText;
             btn.innerText = "VERIFYING...";
             btn.classList.add("opacity-75", "cursor-wait");
-
             const fakeEmail = `${code}@eros.internal`; 
 
             try {
-                // 1. 老用户尝试直接登录
                 let { data, error } = await supabaseClient.auth.signInWithPassword({ 
-                    email: fakeEmail, 
-                    password: password 
+                    email: fakeEmail, password: password 
                 });
 
                 if (error) {
-                    console.log("未找到档案，尝试激活新身份...");
-                    
-                    // [新增逻辑]: 先去 activation_codes 表查询这枚激活码是否有效
                     const { data: codeData, error: codeError } = await supabaseClient
                         .from('activation_codes')
                         .select('is_used')
                         .eq('code', code)
                         .single();
 
-                    if (codeError || !codeData) {
-                        throw new Error("无效的激活码！请确认输入是否正确。");
-                    }
-                    if (codeData.is_used) {
-                        throw new Error("该激活码已被使用！");
-                    }
-
-                    console.log("激活码有效，正在创建身份...");
+                    if (codeError || !codeData) throw new Error("无效的激活码！请确认输入是否正确。");
+                    if (codeData.is_used) throw new Error("该激活码已被使用！");
                     
-                    // 2. 激活码有效，允许注册
                     const signUp = await supabaseClient.auth.signUp({ 
-                        email: fakeEmail, 
-                        password: password,
-                        options: {
-                            data: { 
-                                display_name: nickname,
-                                activation_code: code 
-                            }
-                        }
+                        email: fakeEmail, password: password,
+                        options: { data: { display_name: nickname, activation_code: code } }
                     });
 
                     if (signUp.error) throw signUp.error;
-                    
                     if (signUp.data.user && !signUp.data.session) {
                         alert("⚠️ 系统提示：\n请联系管理员在后台关闭 Email Confirm 设置。");
                         btn.innerText = originalText;
@@ -344,14 +313,10 @@
                         return;
                     }
 
-                    // [新增逻辑]: 注册成功后，立即销毁这枚激活码 (标记为已使用)
-                    const { error: updateError } = await supabaseClient
-                        .from('activation_codes')
+                    await supabaseClient.from('activation_codes')
                         .update({ is_used: true, used_by: signUp.data.user.id })
                         .eq('code', code);
                         
-                    if (updateError) console.error("标记激活码已使用时出错:", updateError);
-
                     data = signUp.data;
                 }
 
@@ -359,7 +324,6 @@
                     currentUser = data.user;
                     await enterMainSystem();
                 }
-
             } catch (err) {
                 alert("❌ 验证失败: " + err.message);
                 btn.innerText = originalText;
@@ -380,24 +344,40 @@
                 runtimeData = JSON.parse(JSON.stringify(defaultSchema));
                 runtimeData.user.username = onlineName;
                 localStorage.setItem(DB_KEY, JSON.stringify(runtimeData));
-                
                 SyncManager.pushToCloud();
             }
             
             renderDashboardSkeleton();
             updateDashboardUI();
-            
+            renderMainContent(); // [修改] 解耦后必须在这里显式调用一次初始渲染
             startAutoSync();
+
+            // 监听窗口尺寸变化，防止横竖屏切换时 UI 状态混乱
+            window.addEventListener('resize', () => {
+                if (window.innerWidth >= 768 && isMobileMenuOpen) {
+                    isMobileMenuOpen = false;
+                    updateDashboardUI();
+                }
+            });
         }
 
         function renderDashboardSkeleton() {
             const root = document.getElementById('app-root');
+            // [修改] 引入 h-[100dvh] 和移动端遮罩，侧边栏改为 fixed 抽屉模式
             root.innerHTML = `
-                <div class="flex h-screen bg-eros-dark font-sans animate-fade-in" id="dashboard-container">
-                    <aside id="sidebar" class="w-64 bg-eros-panel border-r border-slate-200 flex flex-col sidebar-transition relative z-20 flex-shrink-0">
+                <div class="flex h-[100dvh] bg-eros-dark font-sans animate-fade-in" id="dashboard-container">
+                    
+                    <!-- 移动端侧边栏遮罩 -->
+                    <div id="mobile-sidebar-overlay" onclick="window.closeMobileMenu()" class="fixed inset-0 bg-slate-900/50 z-40 hidden md:hidden transition-opacity opacity-0 duration-300"></div>
+
+                    <!-- 侧边栏 (移动端固定在左侧可视区外，PC端相对定位) -->
+                    <aside id="sidebar" class="fixed md:relative inset-y-0 left-0 z-50 w-64 bg-eros-panel border-r border-slate-200 flex flex-col sidebar-transition flex-shrink-0 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
                         <div id="sidebar-header" class="h-16 flex items-center px-4 border-b border-slate-100 overflow-hidden flex-shrink-0 justify-between transition-all duration-300">
                             <span id="logo-text" class="text-xl font-bold tracking-widest text-slate-800 whitespace-nowrap overflow-hidden transition-all duration-300">EROS</span>
-                            <button onclick="toggleSidebar()" class="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 transition flex-shrink-0"><i class="fa-solid fa-bars"></i></button>
+                            <!-- PC 端汉堡菜单按钮 -->
+                            <button onclick="toggleSidebar()" class="hidden md:flex text-slate-400 hover:text-slate-600 w-8 h-8 items-center justify-center rounded hover:bg-slate-100 transition flex-shrink-0"><i class="fa-solid fa-bars"></i></button>
+                            <!-- 移动端关闭按钮 -->
+                            <button onclick="window.closeMobileMenu()" class="md:hidden text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 transition flex-shrink-0"><i class="fa-solid fa-xmark text-lg"></i></button>
                         </div>
                         
                         <nav id="sidebar-nav" class="flex-1 p-2 space-y-2 overflow-y-auto scrollbar-hide select-none">
@@ -437,12 +417,20 @@
                             </div>
                         </div>
                     </aside>
+
+                    <!-- 主内容区 -->
                     <main class="flex-1 flex flex-col min-w-0 bg-eros-dark relative overflow-hidden">
-                        <header class="h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-6 z-10 sticky top-0 flex-shrink-0">
-                            <h2 id="page-title" class="text-slate-700 font-medium tracking-wide whitespace-nowrap overflow-hidden text-ellipsis">SYSTEM</h2>
+                        <header class="h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-4 md:px-6 z-10 sticky top-0 flex-shrink-0">
+                            <div class="flex items-center gap-3">
+                                <!-- [修改] 移动端专属汉堡呼出按钮 -->
+                                <button onclick="window.toggleMobileMenu()" class="md:hidden p-2 -ml-2 text-slate-400 hover:text-slate-600 transition flex-shrink-0">
+                                    <i class="fa-solid fa-bars text-xl"></i>
+                                </button>
+                                <h2 id="page-title" class="text-slate-700 font-medium tracking-wide whitespace-nowrap overflow-hidden text-ellipsis">SYSTEM</h2>
+                            </div>
                             <button onclick="logout()" class="p-2 text-slate-400 hover:text-red-500 transition" title="Logout"><i class="fa-solid fa-power-off"></i></button>
                         </header>
-                        <div id="main-content" class="flex-1 overflow-y-auto scrollbar-hide relative animate-fade-in p-0"></div>
+                        <div id="main-content" class="flex-1 overflow-y-auto scrollbar-hide relative animate-fade-in p-0 w-full h-full"></div>
                     </main>
                 </div>
             `;
@@ -452,8 +440,10 @@
             return `<iframe src="进阶地图 .html" class="w-full h-full border-0" title="进阶地图"></iframe>`;
         }
 
+        // [修改] 解耦 UI 状态与 iframe 渲染，防止重绘导致的进度丢失
         function updateDashboardUI() {
             const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobile-sidebar-overlay');
             const sidebarHeader = document.getElementById('sidebar-header');
             const logoText = document.getElementById('logo-text');
             const navItems = document.querySelectorAll('.nav-item');
@@ -461,74 +451,87 @@
             const coreArrow = document.getElementById('core-arrow');
             const coreInnerWrapper = document.getElementById('core-inner-wrapper');
 
-            if (isSidebarExpanded) {
+            if (!sidebar) return; 
+            const isMobile = window.innerWidth < 768;
+
+            if (isMobile) {
+                // 移动端：抽屉逻辑
+                if (isMobileMenuOpen) {
+                    sidebar.classList.remove('-translate-x-full');
+                    overlay.classList.remove('hidden');
+                    setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+                } else {
+                    sidebar.classList.add('-translate-x-full');
+                    overlay.classList.add('opacity-0');
+                    setTimeout(() => overlay.classList.add('hidden'), 300);
+                }
+                
+                // 移动端侧边栏内部永远保持展开状态的排版
                 sidebar.classList.remove('w-20'); sidebar.classList.add('w-64');
                 sidebarHeader.classList.remove('justify-center', 'px-0'); 
                 sidebarHeader.classList.add('justify-between', 'px-4');
                 logoText.classList.remove('hidden', 'w-0');
                 logoText.style.opacity = '1';
                 
-                navItems.forEach(el => {
-                    el.classList.remove('justify-center', 'px-0'); 
-                    el.classList.add('pl-4', 'pr-3'); 
-                });
-
-                if (coreInnerWrapper) {
-                    coreInnerWrapper.classList.add('flex-1', 'justify-start');
-                    coreInnerWrapper.classList.remove('justify-center', 'w-full'); 
-                }
-
-                navTexts.forEach(el => { 
-                    el.style.display = 'inline-block';
-                    setTimeout(() => el.style.opacity = '1', 50);
-                });
-                coreArrow.style.display = 'block';
+                navItems.forEach(el => { el.classList.remove('justify-center', 'px-0'); el.classList.add('pl-4', 'pr-3'); });
+                if (coreInnerWrapper) { coreInnerWrapper.classList.add('flex-1', 'justify-start'); coreInnerWrapper.classList.remove('justify-center', 'w-full'); }
+                navTexts.forEach(el => { el.style.display = 'inline-block'; el.style.opacity = '1'; });
+                if(coreArrow) coreArrow.style.display = 'block';
 
             } else {
-                sidebar.classList.remove('w-64'); sidebar.classList.add('w-20');
-                sidebarHeader.classList.remove('justify-between', 'px-4'); 
-                sidebarHeader.classList.add('justify-center', 'px-0');
-                logoText.style.opacity = '0';
-                logoText.classList.add('hidden', 'w-0'); 
+                // PC 端：固定布局缩放逻辑
+                sidebar.classList.remove('-translate-x-full');
+                if (overlay) { overlay.classList.add('opacity-0'); overlay.classList.add('hidden'); }
 
-                navItems.forEach(el => {
-                    el.classList.remove('pl-4', 'pr-3'); 
-                    el.classList.add('justify-center', 'px-0'); 
-                });
+                if (isSidebarExpanded) {
+                    sidebar.classList.remove('w-20'); sidebar.classList.add('w-64');
+                    sidebarHeader.classList.remove('justify-center', 'px-0'); 
+                    sidebarHeader.classList.add('justify-between', 'px-4');
+                    logoText.classList.remove('hidden', 'w-0');
+                    logoText.style.opacity = '1';
+                    
+                    navItems.forEach(el => { el.classList.remove('justify-center', 'px-0'); el.classList.add('pl-4', 'pr-3'); });
+                    if (coreInnerWrapper) { coreInnerWrapper.classList.add('flex-1', 'justify-start'); coreInnerWrapper.classList.remove('justify-center', 'w-full'); }
+                    navTexts.forEach(el => { el.style.display = 'inline-block'; setTimeout(() => el.style.opacity = '1', 50); });
+                    if(coreArrow) coreArrow.style.display = 'block';
+                } else {
+                    sidebar.classList.remove('w-64'); sidebar.classList.add('w-20');
+                    sidebarHeader.classList.remove('justify-between', 'px-4'); 
+                    sidebarHeader.classList.add('justify-center', 'px-0');
+                    logoText.style.opacity = '0';
+                    logoText.classList.add('hidden', 'w-0'); 
 
-                if (coreInnerWrapper) {
-                    coreInnerWrapper.classList.remove('flex-1', 'justify-start'); 
-                    coreInnerWrapper.classList.add('justify-center', 'w-full'); 
+                    navItems.forEach(el => { el.classList.remove('pl-4', 'pr-3'); el.classList.add('justify-center', 'px-0'); });
+                    if (coreInnerWrapper) { coreInnerWrapper.classList.remove('flex-1', 'justify-start'); coreInnerWrapper.classList.add('justify-center', 'w-full'); }
+                    navTexts.forEach(el => { el.style.opacity = '0'; el.style.display = 'none'; });
                 }
-
-                navTexts.forEach(el => { 
-                    el.style.opacity = '0'; 
-                    el.style.display = 'none'; 
-                });
             }
 
             const coreSubmenu = document.getElementById('core-submenu');
-            if (isCoreMenuExpanded && isSidebarExpanded) {
-                coreSubmenu.style.maxHeight = '200px'; coreSubmenu.style.opacity = '1'; coreSubmenu.style.marginTop = '0.5rem';
-                coreArrow.style.transform = 'rotate(180deg)';
-            } else {
-                coreSubmenu.style.maxHeight = '0'; coreSubmenu.style.opacity = '0'; coreSubmenu.style.marginTop = '0';
-                coreArrow.style.transform = 'rotate(0deg)';
+            const showSubmenu = isMobile ? isCoreMenuExpanded : (isCoreMenuExpanded && isSidebarExpanded);
+            if (coreSubmenu && coreArrow) {
+                if (showSubmenu) {
+                    coreSubmenu.style.maxHeight = '200px'; coreSubmenu.style.opacity = '1'; coreSubmenu.style.marginTop = '0.5rem';
+                    coreArrow.style.transform = 'rotate(180deg)';
+                } else {
+                    coreSubmenu.style.maxHeight = '0'; coreSubmenu.style.opacity = '0'; coreSubmenu.style.marginTop = '0';
+                    coreArrow.style.transform = 'rotate(0deg)';
+                }
             }
 
             ['nav-map', 'nav-core', 'nav-logs', 'nav-settings'].forEach(id => {
                 const el = document.getElementById(id);
-                el.classList.remove('bg-slate-200', 'text-eros-accent', 'nav-selected', 'text-slate-400');
-                if (currentTab === id.replace('nav-', '')) {
-                    el.classList.add('bg-slate-200', 'text-eros-accent', 'nav-selected');
-                } else {
-                    el.classList.add('text-slate-400');
+                if (el) {
+                    el.classList.remove('bg-slate-200', 'text-eros-accent', 'nav-selected', 'text-slate-400');
+                    if (currentTab === id.replace('nav-', '')) el.classList.add('bg-slate-200', 'text-eros-accent', 'nav-selected');
+                    else el.classList.add('text-slate-400');
                 }
             });
 
-            document.getElementById('user-display').innerText = runtimeData.user.username || "Operator";
-            document.getElementById('page-title').innerText = getTabTitle();
-            renderMainContent();
+            const ud = document.getElementById('user-display');
+            if (ud && runtimeData && runtimeData.user) ud.innerText = runtimeData.user.username || "Operator";
+            const pt = document.getElementById('page-title');
+            if (pt) pt.innerText = getTabTitle();
         }
 
         function getTabTitle() {
@@ -536,38 +539,53 @@
                 if (currentSubTab === 'blockA') return 'CORE ENGINE // 硬件训练';
                 return 'CORE ENGINE // 战术核心';
             }
-            const titles = { 
-                'map': 'CAMPAIGN MAP // 进阶地图', 
-                'logs': 'TRAINING LOGS // 训练日志', 
-                'settings': 'SYSTEM SETTINGS // 设置',
-                'profile': 'OPERATOR PROFILE // 身份档案'
-            };
+            const titles = { 'map': 'CAMPAIGN MAP // 进阶地图', 'logs': 'TRAINING LOGS // 训练日志', 'settings': 'SYSTEM SETTINGS // 设置', 'profile': 'OPERATOR PROFILE // 身份档案' };
             return titles[currentTab] || 'SYSTEM';
         }
 
         function renderMainContent() {
             const container = document.getElementById('main-content');
+            if (!container) return;
             let contentHTML = '';
-            
-            if (currentTab === 'map') { contentHTML = renderMapContent(); } 
-            else if (currentTab === 'core') {
-                 contentHTML = `<iframe src="硬件仪表盘 .html" class="w-full h-full min-h-[600px] border-0 rounded-lg"></iframe>`;
-            } else if (currentTab === 'logs') contentHTML = `<iframe src="训练日志 .html" class="w-full h-full border-0"></iframe>`;
+            if (currentTab === 'map') contentHTML = renderMapContent(); 
+            else if (currentTab === 'core') contentHTML = `<iframe src="硬件仪表盘 .html" class="w-full h-full min-h-[600px] border-0 rounded-lg"></iframe>`;
+            else if (currentTab === 'logs') contentHTML = `<iframe src="训练日志 .html" class="w-full h-full border-0"></iframe>`;
             else if (currentTab === 'profile') contentHTML = `<iframe src="Profile Card .html" class="w-full h-full border-0"></iframe>`;
-            else if (currentTab === 'settings') {
-                contentHTML = `<iframe src="System Settings .html" class="w-full h-full border-0"></iframe>`;
-            }
+            else if (currentTab === 'settings') contentHTML = `<iframe src="System Settings .html" class="w-full h-full border-0"></iframe>`;
             container.innerHTML = contentHTML;
         }
 
         function toggleSidebar() { isSidebarExpanded = !isSidebarExpanded; updateDashboardUI(); }
-        function toggleCoreMenu() { if (!isSidebarExpanded) { isSidebarExpanded = true; isCoreMenuExpanded = true; } else { isCoreMenuExpanded = !isCoreMenuExpanded; } updateDashboardUI(); }
+        function toggleCoreMenu() { if (!isSidebarExpanded && window.innerWidth >= 768) { isSidebarExpanded = true; isCoreMenuExpanded = true; } else { isCoreMenuExpanded = !isCoreMenuExpanded; } updateDashboardUI(); }
         
+        // [新增] 移动端显隐控制
+        window.toggleMobileMenu = function() { isMobileMenuOpen = !isMobileMenuOpen; updateDashboardUI(); }
+        window.closeMobileMenu = function() { isMobileMenuOpen = false; updateDashboardUI(); }
+        
+        // [修改] 优化切换 Tab 逻辑，仅在真正切换时重绘 Iframe
         function switchTab(tab, subTab = null) { 
+            let shouldRenderContent = false;
+            if (currentTab !== tab || currentSubTab !== subTab) {
+                shouldRenderContent = true;
+            }
+
             currentTab = tab; 
             currentSubTab = subTab; 
             if (tab === 'core' && !subTab) { toggleCoreMenu(); } 
+            
+            // 移动端：选择具体功能后自动收起侧边栏
+            if (window.innerWidth < 768) {
+                if (!(tab === 'core' && !subTab)) {
+                    isMobileMenuOpen = false;
+                }
+            }
+            
             updateDashboardUI(); 
+            
+            // 只有 Tab 发生改变时，才重绘 iframe 内容
+            if (shouldRenderContent) {
+                renderMainContent(); 
+            }
             
             scheduleSync();
         }
@@ -581,7 +599,6 @@
                 location.reload();
             }
         }
-        
         window.logout = logout;
 
         window.toggleModal = function(show) {
