@@ -103,7 +103,7 @@
     }
     </style>
 </head>
-<body class="bg-slate-50 h-screen w-screen flex flex-col overflow-hidden relative" id="main-body">
+<body class="bg-slate-50 h-[100dvh] w-screen flex flex-col overflow-hidden relative" id="main-body">
 
     <div id="global-settings-btn" class="absolute top-6 right-8 z-40 hidden">
         <button onclick="toggleSettings(true)" class="text-slate-400 hover:text-slate-600 transition p-2 rounded-full hover:bg-slate-100">
@@ -181,7 +181,7 @@
     </section>
 
     <section id="view-training" class="view-section flex-1 flex-col items-center justify-center w-full max-w-4xl mx-auto relative z-10">
-        <div class="bg-orange-100 text-orange-800 px-12 py-6 rounded-2xl mb-12 border border-orange-200 shadow-sm">
+        <div class="bg-orange-100 text-orange-800 px-12 py-6 rounded-2xl mb-12 border border-orange-200 shadow-sm pointer-events-none">
             <span id="timer-display" class="text-8xl font-mono font-bold tracking-tighter">15:00</span>
         </div>
         <div id="center-zone" class="h-32 flex items-center justify-center w-full relative">
@@ -189,23 +189,25 @@
                     class="bg-blue-600 hover:bg-blue-700 text-white text-xl font-bold py-4 px-12 rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-1">
                 <i class="fa-solid fa-play mr-2"></i> 开始练习
             </button>
-            <div id="guide-text" class="hidden text-center animate-fade-in">
+            <div id="guide-text" class="hidden text-center animate-fade-in pointer-events-none">
                 <p class="text-3xl text-slate-700 font-bold mb-2">跟随节拍 · 1拍1往返</p>
-                <p class="text-sm text-slate-400 mt-2">临界点按下 <span class="bg-slate-200 px-2 py-1 rounded text-slate-600 font-mono border border-slate-300 shadow-sm">空格 Space</span></p>
+                <!-- [修改] 提示文案更新 -->
+                <p class="text-sm text-slate-400 mt-2">临界点按下 <span class="bg-slate-200 px-2 py-1 rounded text-slate-600 font-mono border border-slate-300 shadow-sm">空格 Space</span> 或 <span class="font-bold text-slate-500">轻触屏幕</span></p>
             </div>
         </div>
     </section>
 
-    <section id="view-sprint" class="view-section flex-1 flex-col items-center justify-center w-full max-w-4xl mx-auto relative z-10">
+    <section id="view-sprint" class="view-section flex-1 flex-col items-center justify-center w-full max-w-4xl mx-auto relative z-10 pointer-events-none">
         <div class="bg-fuchsia-100 text-fuchsia-900 px-16 py-8 rounded-3xl mb-8 border-4 border-fuchsia-300 shadow-lg shadow-fuchsia-100">
             <span id="sprint-timer-display" class="text-9xl font-mono font-bold tracking-tighter sprint-text">00:00</span>
         </div>
         <div class="text-center space-y-6">
             <h2 class="text-4xl font-bold text-fuchsia-800">🎉 恭喜达成目标！</h2>
             <p class="text-xl text-fuchsia-600 font-medium">现在，请毫无保留地释放吧！</p>
-            <p class="text-sm text-fuchsia-400">释放完毕并回过神后，按空格键生成报告</p>
+            <!-- [修改] 提示文案更新 -->
+            <p class="text-sm text-fuchsia-400">释放完毕并回过神后，按 <span class="font-bold">空格</span> 或 <span class="font-bold">轻触屏幕</span> 生成报告</p>
         </div>
-        <div id="report-entry-sprint" class="hidden mt-12 animate-bounce">
+        <div id="report-entry-sprint" class="hidden mt-12 animate-bounce pointer-events-auto">
             <button onclick="goToReport()" class="flex items-center gap-3 bg-green-100 hover:bg-green-200 text-green-800 px-8 py-4 rounded-xl transition border border-green-300 shadow-sm">
                 <span>已生成本次训练报告，点击查阅</span>
                 <i class="fa-solid fa-pencil"></i>
@@ -230,9 +232,9 @@
         </div>
     </section>
 
-    <section id="view-report" class="view-section flex-1 flex-col items-center justify-center w-full max-w-5xl mx-auto relative z-10 p-4">
+    <section id="view-report" class="view-section flex-1 flex-col items-center justify-center w-full max-w-5xl mx-auto relative z-10 p-4 overflow-y-auto">
         
-        <div class="bg-white w-full rounded-2xl shadow-lg border border-slate-200 p-6 mb-8">
+        <div class="bg-white w-full rounded-2xl shadow-lg border border-slate-200 p-6 mb-8 mt-12 md:mt-0">
             <h2 class="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                 <i class="fa-solid fa-chart-line text-blue-500"></i> 本次训练报告
             </h2>
@@ -279,7 +281,7 @@
         </p>
 
         <!-- 修改1: 底部按钮组只保留"返回首页"，并居中 -->
-        <div class="w-full flex justify-center">
+        <div class="w-full flex justify-center mb-12">
             <button onclick="saveReportFeedback(); goHome()" class="w-full max-w-sm py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 font-bold transition">
                 返回首页
             </button>
@@ -392,7 +394,7 @@
         </div>
     </div>
 
-    <footer id="main-footer" class="w-full px-12 pb-12 z-30 fixed bottom-0 transition-opacity duration-300">
+    <footer id="main-footer" class="w-full px-12 pb-12 z-30 fixed bottom-0 transition-opacity duration-300 pointer-events-none">
         <div class="relative w-full h-4 bg-slate-200 rounded-full shadow-inner">
             <div id="progress-fill" class="absolute right-0 top-0 h-full bg-green-500 rounded-full shadow-sm progress-bar-transition" style="width: 100%;"></div>
             <div id="markers-container" class="absolute inset-0 w-full h-full pointer-events-none"></div>
@@ -613,7 +615,7 @@
         }
         
         window.onload = function() {
-            // 修改：初始化时优先检查是否处于禁欲锁定状态
+            // 初始化时优先检查是否处于禁欲锁定状态
             if (isLockedOut()) {
                 goToAbstinence();
             } else {
@@ -623,7 +625,6 @@
 
         function switchView(viewName) {
             Object.values(els.views).forEach(el => {
-                // el可能为null (因为history被删了)，加个判断
                 if (el) {
                     el.style.display = 'none'; 
                     el.classList.remove('view-active');
@@ -638,10 +639,8 @@
 
             if (['home', 'report', 'history', 'abstinence'].includes(viewName)) {
                 els.mainFooter.style.opacity = '0';
-                els.mainFooter.style.pointerEvents = 'none';
             } else {
                 els.mainFooter.style.opacity = '1';
-                els.mainFooter.style.pointerEvents = 'auto';
             }
 
             if (['training', 'cooling'].includes(viewName)) {
@@ -756,11 +755,32 @@
             switchView('failure');
         }
 
+        // =====================================
+        // [改动点] 冷却与冲刺结束的触发逻辑
+        // =====================================
+        
+        // 保留原有的空格键触发逻辑，供 PC 端使用
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space') {
                 e.preventDefault();
                 if (state.status === 'running') triggerCooling();
                 else if (state.status === 'sprint') finishSprint();
+            }
+        });
+
+        // 新增手机端/鼠标全局点击触发逻辑
+        document.addEventListener('pointerdown', (e) => {
+            // 严格过滤：防止点击按钮（如长按结束按钮）、弹窗层、滑块时误触发
+            if (e.target.closest('button') || e.target.closest('#cooling-overlay') || e.target.closest('#slider-track') || e.target.closest('input')) {
+                return;
+            }
+
+            if (state.status === 'running') {
+                e.preventDefault(); 
+                triggerCooling();
+            } else if (state.status === 'sprint') {
+                e.preventDefault();
+                finishSprint();
             }
         });
 
@@ -1104,9 +1124,6 @@
             }
         }
 
-        // 修改4: 删除了历史页相关函数 (renderHistory, toggleHistoryView, goToHistory, drawChart)
-
-        // 保留: 历史详情弹窗逻辑 (供禁欲页使用)
         function showHistoryDetail(index) {
             const history = JSON.parse(localStorage.getItem('edge_history') || '[]');
             const record = history[index];
@@ -1315,8 +1332,6 @@
 
             }, 1000);
         }
-
-        // 修改5: 删除了 showEdu JS 函数
 
         function openModal(title, content) {
             els.modal.title.innerText = title;
