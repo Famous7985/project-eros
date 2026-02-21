@@ -103,7 +103,8 @@
     }
     </style>
 </head>
-<body class="bg-slate-50 h-[100dvh] w-screen flex flex-col overflow-hidden relative" id="main-body">
+<!-- [修改] 移除了 h-[100dvh] 和 overflow-hidden，改为 min-h-[100dvh] 释放页面原生的上下滚动能力 -->
+<body class="bg-slate-50 min-h-[100dvh] w-screen flex flex-col overflow-x-hidden relative" id="main-body">
 
     <div id="global-settings-btn" class="absolute top-6 right-8 z-40 hidden">
         <button onclick="toggleSettings(true)" class="text-slate-400 hover:text-slate-600 transition p-2 rounded-full hover:bg-slate-100">
@@ -122,7 +123,8 @@
         </button>
     </div>
 
-    <section id="view-home" class="view-section view-active flex-1 flex-col justify-center items-center w-full max-w-4xl mx-auto relative z-10 p-8">
+    <!-- [修改] 调整 padding 和 flex 对齐方式，适配移动端滚动 -->
+    <section id="view-home" class="view-section view-active flex-1 flex-col justify-start lg:justify-center items-center w-full max-w-4xl mx-auto relative z-10 p-6 md:p-8 pt-12 pb-24">
         <div class="text-center mb-8">
         	<div class="flex justify-center items-center gap-2 mb-2">
             		<i class="fa-solid fa-wave-square text-blue-600 text-3xl"></i>
@@ -170,7 +172,7 @@
         </div>
     </div>
 
-    <div class="w-1/2 min-w-[320px] mx-auto relative h-16 bg-slate-200 rounded-full slider-container overflow-hidden shadow-inner flex items-center" id="slider-track">
+    <div class="w-full md:w-1/2 min-w-[320px] mx-auto relative h-16 bg-slate-200 rounded-full slider-container overflow-hidden shadow-inner flex items-center" id="slider-track">
         <div class="absolute w-full text-center text-slate-400 font-bold tracking-widest pointer-events-none transition-opacity duration-300" id="slider-text">
             向右滑动开始训练
         </div>
@@ -191,7 +193,7 @@
             </button>
             <div id="guide-text" class="hidden text-center animate-fade-in pointer-events-none">
                 <p class="text-3xl text-slate-700 font-bold mb-2">跟随节拍 · 1拍1往返</p>
-                <!-- [修改] 提示文案更新 -->
+                <!-- 提示文案已在上次更新 -->
                 <p class="text-sm text-slate-400 mt-2">临界点按下 <span class="bg-slate-200 px-2 py-1 rounded text-slate-600 font-mono border border-slate-300 shadow-sm">空格 Space</span> 或 <span class="font-bold text-slate-500">轻触屏幕</span></p>
             </div>
         </div>
@@ -204,7 +206,6 @@
         <div class="text-center space-y-6">
             <h2 class="text-4xl font-bold text-fuchsia-800">🎉 恭喜达成目标！</h2>
             <p class="text-xl text-fuchsia-600 font-medium">现在，请毫无保留地释放吧！</p>
-            <!-- [修改] 提示文案更新 -->
             <p class="text-sm text-fuchsia-400">释放完毕并回过神后，按 <span class="font-bold">空格</span> 或 <span class="font-bold">轻触屏幕</span> 生成报告</p>
         </div>
         <div id="report-entry-sprint" class="hidden mt-12 animate-bounce pointer-events-auto">
@@ -232,9 +233,10 @@
         </div>
     </section>
 
-    <section id="view-report" class="view-section flex-1 flex-col items-center justify-center w-full max-w-5xl mx-auto relative z-10 p-4 overflow-y-auto">
+    <!-- [修改] 优化 Report 视图的 padding，防止被底部时间轴遮挡 -->
+    <section id="view-report" class="view-section flex-1 flex-col items-center justify-start lg:justify-center w-full max-w-5xl mx-auto relative z-10 p-4 pt-8 pb-24">
         
-        <div class="bg-white w-full rounded-2xl shadow-lg border border-slate-200 p-6 mb-8 mt-12 md:mt-0">
+        <div class="bg-white w-full rounded-2xl shadow-lg border border-slate-200 p-6 mb-8">
             <h2 class="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                 <i class="fa-solid fa-chart-line text-blue-500"></i> 本次训练报告
             </h2>
@@ -280,7 +282,6 @@
             数据计算中...
         </p>
 
-        <!-- 修改1: 底部按钮组只保留"返回首页"，并居中 -->
         <div class="w-full flex justify-center mb-12">
             <button onclick="saveReportFeedback(); goHome()" class="w-full max-w-sm py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 font-bold transition">
                 返回首页
@@ -288,9 +289,8 @@
         </div>
     </section>
 
-    <!-- 修改2: 删除了整个 #view-history (历史页) -->
-
-    <section id="view-abstinence" class="view-section flex-1 flex-col items-center justify-center w-full max-w-4xl mx-auto relative z-10 p-8">
+    <!-- [修改] 优化 Abstinence 视图 padding -->
+    <section id="view-abstinence" class="view-section flex-1 flex-col items-center justify-start lg:justify-center w-full max-w-4xl mx-auto relative z-10 p-6 md:p-8 pt-12 pb-24">
         
         <div class="mb-8 text-center">
             <div class="flex justify-center items-center gap-2 mb-2">
@@ -345,8 +345,6 @@
                 </p>
             </div>
         </div>
-
-        <!-- 修改3: 删除了底部的“你还想了解什么”及 4 个按钮 -->
     </section>
 
     <div id="modal-overlay" class="fixed inset-0 bg-black/50 z-[100] hidden items-center justify-center backdrop-blur-sm transition-opacity">
@@ -418,8 +416,20 @@
             lockoutHours: savedPrefs.lockoutHours || 24  
         };
 
+        // [新增] 强制越级调用主控台的云同步逻辑，防止切换 Tab 时产生数据竞态导致数据丢失
+        function forceCloudSync() {
+            try {
+                if (window.parent && window.parent.SyncManager) {
+                    window.parent.SyncManager.pushToCloud();
+                }
+            } catch (e) {
+                console.warn("Cross-origin parent access blocked");
+            }
+        }
+
         function saveUserPrefs() {
             localStorage.setItem('edge_prefs', JSON.stringify(USER_PREFS));
+            forceCloudSync(); // 设定改变也立刻同步
         }
         
         let state = {
@@ -446,7 +456,6 @@
                 sprint: document.getElementById('view-sprint'),
                 failure: document.getElementById('view-failure'),
                 report: document.getElementById('view-report'),
-                // history: document.getElementById('view-history'), // 删除
                 abstinence: document.getElementById('view-abstinence')
             },
             timers: {
@@ -615,7 +624,6 @@
         }
         
         window.onload = function() {
-            // 初始化时优先检查是否处于禁欲锁定状态
             if (isLockedOut()) {
                 goToAbstinence();
             } else {
@@ -755,11 +763,6 @@
             switchView('failure');
         }
 
-        // =====================================
-        // [改动点] 冷却与冲刺结束的触发逻辑
-        // =====================================
-        
-        // 保留原有的空格键触发逻辑，供 PC 端使用
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space') {
                 e.preventDefault();
@@ -768,9 +771,7 @@
             }
         });
 
-        // 新增手机端/鼠标全局点击触发逻辑
         document.addEventListener('pointerdown', (e) => {
-            // 严格过滤：防止点击按钮（如长按结束按钮）、弹窗层、滑块时误触发
             if (e.target.closest('button') || e.target.closest('#cooling-overlay') || e.target.closest('#slider-track') || e.target.closest('input')) {
                 return;
             }
@@ -1093,6 +1094,9 @@
             };
             history.push(currentRecord);
             localStorage.setItem('edge_history', JSON.stringify(history));
+            
+            // [新增] 一旦生成记录，立即强制越级同步云端，彻底封堵数据丢失的竞态漏洞
+            forceCloudSync();
         }
 
         function saveReportFeedback() {
@@ -1110,6 +1114,9 @@
             
             history[lastIndex] = lastRecord;
             localStorage.setItem('edge_history', JSON.stringify(history));
+            
+            // [新增] 保存评价后同样立刻强推云端
+            forceCloudSync();
         }
 
         function toggleTag(btn) {
@@ -1440,6 +1447,7 @@
         function clearData() {
             if (confirm("确定要删除所有训练记录吗？此操作不可撤销。")) {
                 localStorage.removeItem('edge_history');
+                forceCloudSync(); // 同步清除操作
                 alert("数据已清除。");
                 closeModal();
                 location.reload();
