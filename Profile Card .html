@@ -136,9 +136,10 @@
                         <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">Activation Date</div>
                         <div id="card-join-date" class="text-sm font-mono font-bold text-slate-700">--</div>
                     </div>
-                    <div class="p-3 bg-slate-50/50 rounded-lg border border-slate-100">
-                        <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">Valid Until</div>
-                        <div id="card-expiry-date" class="text-sm font-mono font-bold text-slate-700">--</div>
+                    <!-- 修改：去除了原先的 Valid Until 动态计算，改为静态买断制展示 -->
+                    <div class="p-3 bg-emerald-50/50 rounded-lg border border-emerald-100">
+                        <div class="text-[10px] text-emerald-600 font-bold uppercase mb-1">Access Level</div>
+                        <div class="text-sm font-mono font-bold text-emerald-700">Lifetime</div>
                     </div>
                 </div>
                 
@@ -219,23 +220,10 @@
             document.getElementById('card-name').innerText = name;
 
             const joinDate = new Date(joinDateStr);
-            const expiryDate = new Date(joinDate);
-            expiryDate.setMonth(expiryDate.getMonth() + 1);
-
             const fmt = (d) => `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
             document.getElementById('card-join-date').innerText = fmt(joinDate);
-            document.getElementById('card-expiry-date').innerText = fmt(expiryDate);
-
-            const now = new Date();
-            const daysLeft = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
-            if (daysLeft < 0) {
-                const el = document.getElementById('card-expiry-date');
-                el.classList.add('text-red-500');
-                el.innerText = "EXPIRED";
-            } else if (daysLeft < 7) {
-                const el = document.getElementById('card-expiry-date');
-                el.classList.add('text-orange-500');
-            }
+            
+            // 修改：已删减 expiryDate 的计算与 DOM 操作
         }
 
         // --- 改名功能 ---
